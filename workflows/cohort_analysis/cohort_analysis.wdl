@@ -502,7 +502,11 @@ task map_cell_types {
 	# Mouse brain mapping requires extra memory due to MMC's FromSpecifiedMarkersRunner's architecture
 	Int calc_mouse_mem_gb = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 50 + (threads * 10))
 	Int mem_gb = if defined(allen_brain_mmc_marker_genes_json) then calc_mouse_mem_gb else calc_human_mem_gb
-	Int disk_size = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 20)
+	# MMC's find_markers_for_all_taxonomy_pairs writes unthinned marker scratch to the working
+	# disk. That scratch scales with the reference taxonomy rather than with the inputs, so it
+	# needs a floor of its own: an observed SEAAD on-the-fly run wrote ~65 GB, with a single
+	# scratch file passing 20 GB. Sizing off the inputs alone exhausts the disk (errno 28).
+	Int disk_size = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 250)
 
 	command <<<
 		set -euo pipefail
@@ -535,7 +539,7 @@ task map_cell_types {
 		cpu: threads
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones
