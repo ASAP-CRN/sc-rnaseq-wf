@@ -50,6 +50,7 @@ workflow cohort_analysis {
 		String run_timestamp
 		String raw_data_path_prefix
 		Array[String] staging_data_buckets
+		String? staging_modality
 		String billing_project
 		String container_registry
 		String zones
@@ -61,6 +62,12 @@ workflow cohort_analysis {
 	Array[Array[String]] workflow_info = [[run_timestamp, workflow_name, workflow_version, workflow_release]]
 
 	String raw_data_path = "~{raw_data_path_prefix}/~{sub_workflow_name}/~{sub_workflow_version}/~{run_timestamp}"
+
+	# Each modality needs its own staging prefix: upload_final_outputs clears its target path
+	# before writing, so sub-workflows sharing a path would delete each other's uploads.
+	String staging_path_prefix = "~{workflow_name}/release/~{crn_release_version}"
+	String preprocess_staging_data_path = if defined(staging_modality) then "~{staging_path_prefix}/preprocess/~{staging_modality}" else "~{staging_path_prefix}/preprocess"
+	String cohort_staging_data_path = if defined(staging_modality) then "~{staging_path_prefix}/~{sub_workflow_name}/~{staging_modality}" else "~{staging_path_prefix}/~{sub_workflow_name}"
 
 	call WriteCohortSampleList.write_cohort_sample_list {
 		input:
@@ -198,7 +205,7 @@ workflow cohort_analysis {
 		input:
 			output_file_paths = preprocessing_output_file_paths,
 			staging_data_buckets = staging_data_buckets,
-			staging_data_path = "~{workflow_name}/release/~{crn_release_version}/preprocess",
+			staging_data_path = preprocess_staging_data_path,
 			billing_project = billing_project,
 			zones = zones
 	}
@@ -247,7 +254,7 @@ workflow cohort_analysis {
 		input:
 			output_file_paths = cohort_analysis_final_output_paths,
 			staging_data_buckets = staging_data_buckets,
-			staging_data_path = "~{workflow_name}/release/~{crn_release_version}/~{sub_workflow_name}",
+			staging_data_path = cohort_staging_data_path,
 			billing_project = billing_project,
 			zones = zones
 	}
@@ -326,6 +333,7 @@ workflow cohort_analysis {
 		run_timestamp: {help: "UTC timestamp; stored in the file-level manifest and final manifest with all saved files."}
 		raw_data_path_prefix: {help: "Raw data bucket path prefix; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis`)."}
 		staging_data_buckets: {help: "Array of staging data buckets to upload intermediate files to (i.e., DEV or UAT buckets depending on internal QC status)."}
+		staging_modality: {help: "Modality subdirectory ('rna', 'atac', or 'multiome') appended to the staging data paths; set when several modality sub-workflows stage into the same bucket so they do not overwrite each other. Omit to stage directly under the release path."}
 		billing_project: {help: "Billing project to charge GCP costs."}
 		container_registry: {help: "Container registry where workflow Docker images are hosted."}
 		zones: {help: "Space-delimited set of GCP zones to spin up compute in. ['us-central1-c us-central1-f']"}
