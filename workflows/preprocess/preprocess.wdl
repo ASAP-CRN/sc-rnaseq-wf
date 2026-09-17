@@ -518,7 +518,7 @@ task counts_to_adata {
 	}
 
 	runtime {
-		docker: "~{container_registry}/sc_tools:1.2.0"
+		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: 4
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "32 GB"

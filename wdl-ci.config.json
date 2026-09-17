@@ -75,6 +75,8 @@
                 "doublet_score_max": "${doublet_score_max}",
                 "total_counts_limits": "${total_counts_limits}",
                 "n_genes_by_counts_limits": "${n_genes_by_counts_limits}",
+                "n_mads_lower": "${n_mads_lower}",
+                "n_mads_upper": "${n_mads_upper}",
                 "container_registry": "${container_registry}",
                 "zones": "${zones}"
               },
@@ -823,13 +825,15 @@
       "pct_counts_mt_max": 10,
       "doublet_score_max": "0.2",
       "total_counts_limits": [
-        100,
+        500,
         100000
       ],
       "n_genes_by_counts_limits": [
-        100,
+        300,
         10000
       ],
+      "n_mads_lower": 3,
+      "n_mads_upper": 5,
       "norm_target_sum": 10000,
       "n_top_genes": 3000,
       "n_comps": 30,
