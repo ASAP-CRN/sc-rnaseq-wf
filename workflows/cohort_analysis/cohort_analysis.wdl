@@ -315,7 +315,7 @@ workflow cohort_analysis {
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
 		total_counts_limits: {help: "Minimum and maximum total UMI (unique molecular identifier) counts per cell. [100, 100000]"}
 		n_genes_by_counts_limits: {help: "Minimum and maximum number of genes detected per cell (genes with at least one count). [100, 10000]"}
-		mmc_taxonomy: {help: "Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEEAD' (human), 'Siletti' (human), or 'ABC' (mouse)."}
+		mmc_taxonomy: {help: "Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEAAD' (human), 'Siletti' (human), or 'ABC' (mouse)."}
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}
 		allen_brain_mmc_marker_genes_json: {help: "A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data."}
 		norm_target_sum: {help: "The total count value that each cell will be normalized to. [10000]"}
@@ -563,7 +563,7 @@ task map_cell_types {
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
 		filtered_adata_object: {help: "QC-filtered AnnData object."}
-		mmc_taxonomy: {help: "Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEEAD' (human), 'Siletti' (human), or 'ABC' (mouse)."}
+		mmc_taxonomy: {help: "Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEAAD' (human), 'Siletti' (human), or 'ABC' (mouse)."}
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}
 		allen_brain_mmc_marker_genes_json: {help: "A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data."}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
