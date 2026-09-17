@@ -58,7 +58,8 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | Int? | doublet_score_max | Maximum doublet detection score threshold. [0.2] |
 | Array[Int]? | total_counts_limits | Minimum and maximum total UMI (unique molecular identifier) counts per cell. [100, 100000] |
 | Array[Int]? | n_genes_by_counts_limits | Minimum and maximum number of genes detected per cell (genes with at least one count). [100, 10000] |
-| File? | allen_brain_mmc_precomputed_stats_h5 | A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy).  |
+| String | mmc_taxonomy | Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEEAD' (human), 'Siletti' (human), or 'ABC' (mouse). |
+| File? | allen_brain_mmc_precomputed_stats_h5 | A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy). |
 | File? | allen_brain_mmc_marker_genes_json | A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data. |
 | Int? | norm_target_sum | The total count value that each cell will be normalized to. [10000] |
 | Int? | n_top_genes | Number of HVG genes to keep. [3000] |

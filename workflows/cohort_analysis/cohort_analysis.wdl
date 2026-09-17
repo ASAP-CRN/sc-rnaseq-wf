@@ -22,6 +22,7 @@ workflow cohort_analysis {
 		Array[Int] n_genes_by_counts_limits
 
 		# Allen Institute's Map My Cells
+		String mmc_taxonomy
 		File allen_brain_mmc_precomputed_stats_h5
 		File? allen_brain_mmc_marker_genes_json
 
@@ -107,6 +108,7 @@ workflow cohort_analysis {
 		input:
 			cohort_id = cohort_id,
 			filtered_adata_object = filter.filtered_adata_object,
+			mmc_taxonomy = mmc_taxonomy,
 			allen_brain_mmc_precomputed_stats_h5 = allen_brain_mmc_precomputed_stats_h5,
 			allen_brain_mmc_marker_genes_json = allen_brain_mmc_marker_genes_json,
 			raw_data_path = raw_data_path,
@@ -313,6 +315,7 @@ workflow cohort_analysis {
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
 		total_counts_limits: {help: "Minimum and maximum total UMI (unique molecular identifier) counts per cell. [100, 100000]"}
 		n_genes_by_counts_limits: {help: "Minimum and maximum number of genes detected per cell (genes with at least one count). [100, 10000]"}
+		mmc_taxonomy: {help: "Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEEAD' (human), 'Siletti' (human), or 'ABC' (mouse)."}
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}
 		allen_brain_mmc_marker_genes_json: {help: "A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data."}
 		norm_target_sum: {help: "The total count value that each cell will be normalized to. [10000]"}
@@ -493,6 +496,7 @@ task map_cell_types {
 		String cohort_id
 		File filtered_adata_object
 
+		String mmc_taxonomy
 		File allen_brain_mmc_precomputed_stats_h5
 		File? allen_brain_mmc_marker_genes_json
 
@@ -503,17 +507,16 @@ task map_cell_types {
 		String zones
 	}
 
-	String mmc_output_prefix = if defined(allen_brain_mmc_marker_genes_json) then "~{cohort_id}.mmc_markers_mapping" else "~{cohort_id}.mmc_otf_mapping.SEAAD"
+	String mmc_mapping_mode = if defined(allen_brain_mmc_marker_genes_json) then "mmc_markers_mapping" else "mmc_otf_mapping"
+	String mmc_output_prefix = "~{cohort_id}.~{mmc_mapping_mode}.~{mmc_taxonomy}"
 
 	Int threads = 4
 	Int calc_human_mem_gb = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 50)
 	# Mouse brain mapping requires extra memory due to MMC's FromSpecifiedMarkersRunner's architecture
 	Int calc_mouse_mem_gb = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 50 + (threads * 10))
 	Int mem_gb = if defined(allen_brain_mmc_marker_genes_json) then calc_mouse_mem_gb else calc_human_mem_gb
-	# MMC's find_markers_for_all_taxonomy_pairs writes unthinned marker scratch to the working
-	# disk. That scratch scales with the reference taxonomy rather than with the inputs, so it
-	# needs a floor of its own: an observed SEAAD on-the-fly run wrote ~65 GB, with a single
-	# scratch file passing 20 GB. Sizing off the inputs alone exhausts the disk (errno 28).
+	# MMC's find_markers_for_all_taxonomy_pairs writes unthinned marker scratch to the working disk
+	# That scratch scales with the reference taxonomy rather than with the inputs, so it needs a floor of its own
 	Int disk_size = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 250)
 
 	command <<<
@@ -560,6 +563,7 @@ task map_cell_types {
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
 		filtered_adata_object: {help: "QC-filtered AnnData object."}
+		mmc_taxonomy: {help: "Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEEAD' (human), 'Siletti' (human), or 'ABC' (mouse)."}
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}
 		allen_brain_mmc_marker_genes_json: {help: "A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data."}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}

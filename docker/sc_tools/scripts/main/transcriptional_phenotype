@@ -4,6 +4,7 @@
 # import muon as mu
 import scanpy as sc
 import argparse
+import json
 import pandas as pd
 import sys
 from anndata import AnnData
@@ -27,76 +28,128 @@ from helpers import update_validation_metrics
 # MAX_GB = 48.0
 
 
-# Results header is the first 4 lines
-def read_csv_results(csv_results_path: str | Path) -> pd.DataFrame:
+def read_csv_results(csv_results_path: str | Path) -> tuple[pd.DataFrame, list[str]]:
     """
-    Read the results file and return a pandas DataFrame
+    Read the results file and return a pandas DataFrame plus the readable taxonomy
+    hierarchy declared in its header.
     """
     ## HEADER
-    # metadata = asap-cohort.merged_adata_object.mmc.seaad_results.20250129.json
+    # metadata = team-jakobsson.mmc_otf_mapping.SEAAD.extended_results.json
     # taxonomy hierarchy = ["CCN20230505_CLAS", "CCN20230505_SUBC", "CCN20230505_SUPT"]
     # readable taxonomy hierarchy = ["class", "subclass", "supertype"]
-    # algorithm: 'hierarchical'; codebase: http://github.com/AllenInstitute/cell_type_mapper; version: v1.4.2
-    # cell_id,class_label,class_name,class_bootstrapping_probability,class_correlation_coefficient,class_aggregate_probability,subclass_label,subclass_name,subclass_bootstrapping_probability,subclass_correlation_coefficient,subclas
+    # algorithm: 'hierarchical'; codebase: http://github.com/AllenInstitute/cell_type_mapper; version: 1.5.3
+    # cell_id,class_label,class_name,...
+    #
+    # The level names depend on which precomputed stats reference was mapped against, and
+    # every results column name is derived from them, so read them rather than assume them.
+    taxonomy_levels: list[str] = []
+    n_header_lines = 0
+    with open(csv_results_path) as results_file:
+        for line in results_file:
+            if not line.startswith("#"):
+                break
+            n_header_lines += 1
+            if line.startswith("# readable taxonomy hierarchy"):
+                taxonomy_levels = json.loads(line.split("=", 1)[1].strip())
 
-    results = pd.read_csv(csv_results_path, header=4)
+    if not taxonomy_levels:
+        raise ValueError(
+            f"[ERROR] No '# readable taxonomy hierarchy' header line in [{csv_results_path}]"
+        )
+
+    results = pd.read_csv(csv_results_path, header=n_header_lines)
     results.set_index("cell_id", inplace=True)
     results.index.name = None
-    return results
+    return results, taxonomy_levels
 
 
-def summarize_mmc_results(mmc_results: pd.DataFrame, workflow_name: str):
+def summarize_mmc_results(mmc_results: pd.DataFrame, workflow_name: str, taxonomy_levels: list[str]):
     # First get "classes"
     # Define row indices for each class
     # HUMAN
     if workflow_name in ("pmdbs_sc_rnaseq", "pmdbs_sc_multiome"):
-        gabaergic = mmc_results["class_name"] == "Neuronal: GABAergic"
-        glutamatergic = mmc_results["class_name"] == "Neuronal: Glutamatergic"
-        non_neuronal = mmc_results["class_name"] == "Non-neuronal and Non-neural"
+        # The readable taxonomy hierarchy determines every column name MMC writes, so
+        # dispatch on it instead of assuming the SEA-AD levels.
+        if taxonomy_levels == ["class", "subclass", "supertype"]:
+            gabaergic = mmc_results["class_name"] == "Neuronal: GABAergic"
+            glutamatergic = mmc_results["class_name"] == "Neuronal: Glutamatergic"
+            non_neuronal = mmc_results["class_name"] == "Non-neuronal and Non-neural"
 
-        mmc_results.loc[gabaergic, "phenotype"] = "GABAergic"
-        mmc_results.loc[glutamatergic, "phenotype"] = "Glutamatergic"
-        mmc_results.loc[non_neuronal, "phenotype"] = mmc_results.loc[
-            non_neuronal, "subclass_name"
-        ]
-
-        mmc_results.loc[glutamatergic, "rho"] = mmc_results.loc[
-            glutamatergic, "class_correlation_coefficient"
-        ]
-        mmc_results.loc[gabaergic, "rho"] = mmc_results.loc[
-            gabaergic, "class_correlation_coefficient"
-        ]
-        mmc_results.loc[non_neuronal, "rho"] = mmc_results.loc[
-            non_neuronal, "subclass_correlation_coefficient"
-        ]
-
-        mmc_results.loc[glutamatergic, "prob"] = mmc_results.loc[
-            glutamatergic, "class_bootstrapping_probability"
-        ]
-        mmc_results.loc[gabaergic, "prob"] = mmc_results.loc[
-            gabaergic, "class_bootstrapping_probability"
-        ]
-        mmc_results.loc[non_neuronal, "prob"] = mmc_results.loc[
-            non_neuronal, "subclass_bootstrapping_probability"
-        ]
-
-        mmc_results["cell_type"] = mmc_results["phenotype"]
-
-        # Change the phenotype to unknown if the correlation or bootstrap probability < 0.5
-        mmc_results.loc[mmc_results["rho"] < 0.5, "cell_type"] = "Unknown"
-        mmc_results.loc[mmc_results["prob"] < 0.5, "cell_type"] = "Unknown"
-
-        return mmc_results[
-            [
-                "cell_type",
-                "phenotype",
-                "rho",
-                "prob",
-                "class_name",
-                "subclass_name",
-                "supertype_name",
+            mmc_results.loc[gabaergic, "phenotype"] = "GABAergic"
+            mmc_results.loc[glutamatergic, "phenotype"] = "Glutamatergic"
+            mmc_results.loc[non_neuronal, "phenotype"] = mmc_results.loc[
+                non_neuronal, "subclass_name"
             ]
-        ]
+
+            mmc_results.loc[glutamatergic, "rho"] = mmc_results.loc[
+                glutamatergic, "class_correlation_coefficient"
+            ]
+            mmc_results.loc[gabaergic, "rho"] = mmc_results.loc[
+                gabaergic, "class_correlation_coefficient"
+            ]
+            mmc_results.loc[non_neuronal, "rho"] = mmc_results.loc[
+                non_neuronal, "subclass_correlation_coefficient"
+            ]
+
+            mmc_results.loc[glutamatergic, "prob"] = mmc_results.loc[
+                glutamatergic, "class_bootstrapping_probability"
+            ]
+            mmc_results.loc[gabaergic, "prob"] = mmc_results.loc[
+                gabaergic, "class_bootstrapping_probability"
+            ]
+            mmc_results.loc[non_neuronal, "prob"] = mmc_results.loc[
+                non_neuronal, "subclass_bootstrapping_probability"
+            ]
+
+            mmc_results["cell_type"] = mmc_results["phenotype"]
+
+            # Change the phenotype to unknown if the correlation or bootstrap probability < 0.5
+            mmc_results.loc[mmc_results["rho"] < 0.5, "cell_type"] = "Unknown"
+            mmc_results.loc[mmc_results["prob"] < 0.5, "cell_type"] = "Unknown"
+
+            return mmc_results[
+                [
+                    "cell_type",
+                    "phenotype",
+                    "rho",
+                    "prob",
+                    "class_name",
+                    "subclass_name",
+                    "supertype_name",
+                ]
+            ]
+        elif taxonomy_levels == ["supercluster", "cluster", "subcluster"]:
+            # supercluster is already about as granular as a SEA-AD subclass (e.g.
+            # "Deep-layer corticothalamic and 6b", "Astrocyte"), so it is used directly as
+            # the phenotype instead of being collapsed to a neurotransmitter class.
+            mmc_results["phenotype"] = mmc_results["supercluster_name"]
+            mmc_results["rho"] = mmc_results["supercluster_correlation_coefficient"]
+            mmc_results["prob"] = mmc_results["supercluster_bootstrapping_probability"]
+
+            mmc_results["cell_type"] = mmc_results["phenotype"]
+
+            # Change the phenotype to unknown if the correlation or bootstrap probability < 0.5
+            mmc_results.loc[mmc_results["rho"] < 0.5, "cell_type"] = "Unknown"
+            mmc_results.loc[mmc_results["prob"] < 0.5, "cell_type"] = "Unknown"
+
+            return mmc_results[
+                [
+                    "cell_type",
+                    "phenotype",
+                    "rho",
+                    "prob",
+                    "supercluster_name",
+                    "cluster_name",
+                    "subcluster_name",
+                ]
+            ]
+        else:
+            raise ValueError(
+                f"[ERROR] Unsupported taxonomy hierarchy {taxonomy_levels} in the MMC results; "
+                "expected ['class', 'subclass', 'supertype'] (SEA-AD) or "
+                "['supercluster', 'cluster', 'subcluster'] (10Xv3/Siletti). Check that "
+                "allen_brain_mmc_precomputed_stats_h5 is the intended reference."
+            )
     elif workflow_name == "mouse_sc_rnaseq":
         # MOUSE
         gabaergic = mmc_results["class_name"].str.contains("GABA")
@@ -165,8 +218,8 @@ def summarize_mmc_results(mmc_results: pd.DataFrame, workflow_name: str):
 
 def main(args: argparse.Namespace):
     # Load MMC results
-    results = read_csv_results(args.mmc_results)
-    results = summarize_mmc_results(results, args.workflow_name)
+    results, taxonomy_levels = read_csv_results(args.mmc_results)
+    results = summarize_mmc_results(results, args.workflow_name, taxonomy_levels)
     # Save the results to parquet file.. or feather?
     results.to_parquet(args.output_cell_types_file, compression="gzip")
 
