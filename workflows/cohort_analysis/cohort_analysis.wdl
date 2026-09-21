@@ -62,7 +62,7 @@ workflow cohort_analysis {
 
 	Array[Array[String]] workflow_info = [[run_timestamp, workflow_name, workflow_version, workflow_release]]
 
-	String raw_data_path = if defined(modality) then "~{raw_data_path_prefix}/~{sub_workflow_name}/~{sub_workflow_version}/~{run_timestamp}/~{modality}" else "~{raw_data_path_prefix}/~{sub_workflow_name}/~{sub_workflow_version}/~{run_timestamp}"
+	String raw_data_path = if defined(modality) then "~{raw_data_path_prefix}/~{sub_workflow_name}/~{modality}/~{sub_workflow_version}/~{run_timestamp}" else "~{raw_data_path_prefix}/~{sub_workflow_name}/~{sub_workflow_version}/~{run_timestamp}"
 
 	# Each modality needs its own staging prefix
 	String staging_path_prefix = "~{workflow_name}/release/~{crn_release_version}"
