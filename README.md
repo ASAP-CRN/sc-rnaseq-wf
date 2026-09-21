@@ -101,6 +101,9 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | String | sample_id | ASAP-generated unique identifier combined with the replicate for the sample within the project. |
 | String? | batch | The sample's batch. If unset, the analysis will stop after running `cellranger_count`. |
 | String? | sex | The sample's sex. |
+| String? | brain_region_level_1 | Abbreviation of most granular anatomical region (Level 1). |
+| String? | brain_region_level_2 | Abbreviation of intermediate level anatomical region (Level 2). |
+| String? | brain_region_level_3 | Abbreviation of coarse level anatomical region (Level 3). |
 | File | fastq_R1 | Path to the sample's read 1 FASTQ file. |
 | File | fastq_R2 | Path to the sample's read 2 FASTQ file. |
 | File? | fastq_I1 | Optional fastq index 1. |
@@ -116,6 +119,9 @@ The inputs JSON may be generated manually, however when running a large number o
     - `ASAP_sample_id`: A generated unique identifier for the sample within the project.
     - `batch`: The sample's batch.
     - `sex`: The sample's sex.
+    - `brain_region_level_1`: Abbreviation of most granular anatomical region (Level 1).
+    - `brain_region_level_2`: Abbreviation of intermediate level anatomical region (Level 2).
+    - `brain_region_level_3`: Abbreviation of coarse level anatomical region (Level 3).
     - `fastq_R1s`: The gs uri to read 1 of sample FASTQ.
         - This is appended to the `project-tsv` from the `fastq-locs-txt`: FASTQ locations for all samples provided in the `project-tsv`. Each sample is expected to have one set of paired fastqs located at `${fastq_path}/${sample_id}*`. The read 1 file should include 'R1' somewhere in the filename. Generate this file e.g. by running `gcloud storage ls gs://fastq_bucket/some/path/**.fastq.gz >> fastq_locs.txt`.
     - `fastq_R2s`: The gs uri to read 2 of sample FASTQ.

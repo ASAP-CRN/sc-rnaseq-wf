@@ -140,6 +140,9 @@ workflow preprocess {
 					sample_id = sample.sample_id,
 					batch = select_first([sample.batch]),
 					sex = select_first([sample.sex]),
+					brain_region_level_1 = select_first([sample.brain_region_level_1]),
+					brain_region_level_2 = select_first([sample.brain_region_level_2]),
+					brain_region_level_3 = select_first([sample.brain_region_level_3]),
 					team_id = team_id,
 					dataset_id = dataset_id,
 					cellbender_counts = removed_background_counts_output,
@@ -479,6 +482,9 @@ task counts_to_adata {
 		String sample_id
 		String batch
 		String sex
+		String brain_region_level_1
+		String brain_region_level_2
+		String brain_region_level_3
 
 		String team_id
 		String dataset_id
@@ -502,6 +508,9 @@ task counts_to_adata {
 			--sample-id ~{sample_id} \
 			--batch ~{batch} \
 			--sex ~{sex} \
+			--brain-region-level-1 ~{brain_region_level_1} \
+			--brain-region-level-2 ~{brain_region_level_2} \
+			--brain-region-level-3 ~{brain_region_level_3} \
 			--team ~{team_id} \
 			--dataset ~{dataset_id} \
 			--adata-output ~{dataset_sample_id}.cleaned_unfiltered.h5ad
@@ -537,6 +546,9 @@ task counts_to_adata {
 		sample_id: {help: "Generated ASAP sample ID; stored in the AnnData objects and used to name output files."}
 		batch: {help: "The sample's batch; stored in the AnnData objects."}
 		sex: {help: "The sample's sex; stored in the AnnData objects."}
+		brain_region_level_1: {help: "Abbreviation of most granular anatomical region (Level 1)."}
+		brain_region_level_2: {help: "Abbreviation of intermediate level anatomical region (Level 2)."}
+		brain_region_level_3: {help: "Abbreviation of coarse level anatomical region (Level 3)."}
 		team_id: {help: "Name of the CRN Team; stored in the AnnData objects."}
 		dataset_id: {help: "Generated ASAP dataset ID; stored in the AnnData objects."}
 		cellbender_counts: {help: "CellBender-cleaned count matrix (H5 format)."}

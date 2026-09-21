@@ -1,7 +1,7 @@
 {
   "sc_rnaseq_analysis.organism": "String",
   "sc_rnaseq_analysis.cohort_id": "String",
-  "sc_rnaseq_analysis.projects": "Array[WomCompositeType {\n samples -> Array[WomCompositeType {\n fastq_I1s -> Array[File]\nsample_id -> String\nfastq_R1s -> Array[File]+\nsex -> String?\nbatch -> String?\nfastq_I2s -> Array[File]\nfastq_R2s -> Array[File]+ \n}]\nasap_dataset_id -> String\nrun_project_cohort_analysis -> Boolean\nraw_data_bucket -> String\nasap_team_id -> String\nstaging_data_buckets -> Array[String]\nmultimodal_sc_data -> Boolean\nasap_dataset_doi_url -> String \n}]",
+  "sc_rnaseq_analysis.projects": "Array[WomCompositeType {\n samples -> Array[WomCompositeType {\n fastq_I1s -> Array[File]\nbrain_region_level_2 -> String?\nsample_id -> String\nbrain_region_level_3 -> String?\nsex -> String?\nbatch -> String?\nfastq_I2s -> Array[File]\nfastq_R2s -> Array[File]+\nbrain_region_level_1 -> String?\nfastq_R1s -> Array[File]+ \n}]\nasap_dataset_id -> String\nrun_project_cohort_analysis -> Boolean\nraw_data_bucket -> String\nasap_team_id -> String\nstaging_data_buckets -> Array[String]\nmultimodal_sc_data -> Boolean\nasap_dataset_doi_url -> String \n}]",
   "sc_rnaseq_analysis.cellranger_reference_data": "File",
   "sc_rnaseq_analysis.cellbender_fpr": "Float (optional, default = 0.0)",
   "sc_rnaseq_analysis.pct_counts_mt_max": "Int (optional, default = 10)",
