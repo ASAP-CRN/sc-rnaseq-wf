@@ -140,9 +140,9 @@ workflow preprocess {
 					sample_id = sample.sample_id,
 					batch = select_first([sample.batch]),
 					sex = select_first([sample.sex]),
-					brain_region_level_1 = select_first([sample.brain_region_level_1]),
-					brain_region_level_2 = select_first([sample.brain_region_level_2]),
-					brain_region_level_3 = select_first([sample.brain_region_level_3]),
+					brain_region_level_1 = select_first([sample.brain_region_level_1, "NA"]),
+					brain_region_level_2 = select_first([sample.brain_region_level_2, "NA"]),
+					brain_region_level_3 = select_first([sample.brain_region_level_3, "NA"]),
 					team_id = team_id,
 					dataset_id = dataset_id,
 					cellbender_counts = removed_background_counts_output,
@@ -508,9 +508,9 @@ task counts_to_adata {
 			--sample-id ~{sample_id} \
 			--batch ~{batch} \
 			--sex ~{sex} \
-			--brain-region-level-1 ~{brain_region_level_1} \
-			--brain-region-level-2 ~{brain_region_level_2} \
-			--brain-region-level-3 ~{brain_region_level_3} \
+			--brain-region-level-1 "~{brain_region_level_1}" \
+			--brain-region-level-2 "~{brain_region_level_2}" \
+			--brain-region-level-3 "~{brain_region_level_3}" \
 			--team ~{team_id} \
 			--dataset ~{dataset_id} \
 			--adata-output ~{dataset_sample_id}.cleaned_unfiltered.h5ad
