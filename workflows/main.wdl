@@ -20,8 +20,10 @@ workflow sc_rnaseq_analysis {
 		# Filtering parameters
 		Int pct_counts_mt_max = 10
 		Float doublet_score_max = 0.2
-		Array[Int] total_counts_limits = [100, 100000]
-		Array[Int] n_genes_by_counts_limits = [100, 10000]
+		Array[Int] total_counts_limits = [500, 100000]
+		Array[Int] n_genes_by_counts_limits = [300, 10000]
+		Float n_mads_lower = 3
+		Float n_mads_upper = 5
 
 		# Allen Institute's Map My Cells
 		String mmc_taxonomy
@@ -41,9 +43,9 @@ workflow sc_rnaseq_analysis {
 
 		# Clustering parameters
 		Int n_neighbors = 15
-		Array[Float] leiden_res = [0.05, 0.1, 0.2, 0.4]
+		Array[Float] leiden_res = [0.2, 0.5, 1.0]
 
-		Array[String] groups = ["sample", "batch", "cell_type", "leiden_res_0.05", "leiden_res_0.10", "leiden_res_0.20", "leiden_res_0.40"]
+		Array[String] groups = ["sample", "batch", "cell_type", "leiden_res_0.20", "leiden_res_0.50", "leiden_res_1.0"]
 		Array[String] features = ["n_genes_by_counts", "total_counts", "pct_counts_mt", "pct_counts_rb", "doublet_score", "S_score", "G2M_score"]
 
 		# Cohort analysis
@@ -56,9 +58,9 @@ workflow sc_rnaseq_analysis {
 	}
 
 	String workflow_execution_path = "workflow_execution"
-	String workflow_version = "v4.1.0"
+	String workflow_version = "v5.0.0"
 	String workflow_release = "https://github.com/ASAP-CRN/sc-rnaseq-wf/releases/tag/sc_rnaseq_analysis-~{workflow_version}"
-	String crn_release_version = "v5.1.0"
+	String crn_release_version = "v6.0.0"
 
 	call get_workflow_name {
 		input:
@@ -123,6 +125,8 @@ workflow sc_rnaseq_analysis {
 					doublet_score_max = doublet_score_max,
 					total_counts_limits = total_counts_limits,
 					n_genes_by_counts_limits = n_genes_by_counts_limits,
+					n_mads_lower = n_mads_lower,
+					n_mads_upper = n_mads_upper,
 					mmc_taxonomy = mmc_taxonomy,
 					allen_brain_mmc_precomputed_stats_h5 = allen_brain_mmc_precomputed_stats_h5,
 					allen_brain_mmc_marker_genes_json = allen_brain_mmc_marker_genes_json,
@@ -164,6 +168,8 @@ workflow sc_rnaseq_analysis {
 				doublet_score_max = doublet_score_max,
 				total_counts_limits = total_counts_limits,
 				n_genes_by_counts_limits = n_genes_by_counts_limits,
+				n_mads_lower = n_mads_lower,
+				n_mads_upper = n_mads_upper,
 				mmc_taxonomy = mmc_taxonomy,
 				allen_brain_mmc_precomputed_stats_h5 = allen_brain_mmc_precomputed_stats_h5,
 				allen_brain_mmc_marker_genes_json = allen_brain_mmc_marker_genes_json,
@@ -308,6 +314,8 @@ workflow sc_rnaseq_analysis {
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
 		total_counts_limits: {help: "Minimum and maximum total UMI (unique molecular identifier) counts per cell. [100, 100000]"}
 		n_genes_by_counts_limits: {help: "Minimum and maximum number of genes detected per cell (genes with at least one count). [100, 10000]"}
+		n_mads_lower: {help: "Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3]"}
+		n_mads_upper: {help: "Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5]"}
 		mmc_taxonomy: {help: "Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEAAD' (human), 'Siletti' (human), or 'ABC' (mouse)."}
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}
 		allen_brain_mmc_marker_genes_json: {help: "A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data."}
@@ -319,8 +327,8 @@ workflow sc_rnaseq_analysis {
 		scanvi_predictions_key: {help: "scANVI cell type predictions column name. ['C_scANVI']"}
 		batch_key: {help: "Key in AnnData object for batch information. ['batch_id']"}
 		n_neighbors: {help: "The size of local neighborhood (in terms of number of neighboring data points) used for manifold approximation. [15]"}
-		leiden_res: {help: "Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.05, 0.1, 0.2, 0.4]"}
-		groups: {help: "Groups to produce umap plots for. ['sample', 'batch', 'cell_type', 'leiden_res_0.05', 'leiden_res_0.10', 'leiden_res_0.20', 'leiden_res_0.40']"}
+		leiden_res: {help: "Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.2, 0.5, 1.0]"}
+		groups: {help: "Groups to produce umap plots for. ['sample', 'batch', 'cell_type', 'leiden_res_0.20', 'leiden_res_0.50', 'leiden_res_1.0']"}
 		features: {help: "Features to produce umap plots for. ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_rb', 'doublet_score', 'S_score', 'G2M_score']"}
 		run_cross_team_cohort_analysis: {help: "Whether to run downstream harmonization steps on all samples across projects. If set to false, only preprocessing steps (cellranger and generating the initial adata object(s)) will run for samples. [false]"}
 		cohort_raw_data_bucket: {help: "Bucket to upload cross-team cohort intermediate files to."}

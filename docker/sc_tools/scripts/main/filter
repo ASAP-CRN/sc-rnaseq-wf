@@ -4,12 +4,72 @@
 # import muon as mu
 import scanpy as sc
 import argparse
+import numpy as np
 import pandas as pd
 import sys
 from anndata import AnnData
+from scipy.stats import median_abs_deviation
 
 sys.path.append("/opt/scripts/utility")
 from helpers import update_validation_metrics
+
+
+def mad_outlier(
+    values: np.ndarray, n_mads_lower: float, n_mads_upper: float
+) -> tuple[np.ndarray, float, float]:
+    """Flag values outside [median - n_mads_lower * MAD, median + n_mads_upper * MAD].
+
+    MADs are computed on the log1p scale because UMI and gene counts are right-skewed;
+    under an approximately normal distribution 3 MADs covers ~99% of the data. The two
+    bounds are separate because high counts are usually fine, so only the extreme high
+    tail is trimmed.
+
+    Returns the outlier mask plus the lower and upper thresholds in count units.
+    """
+    log_values = np.log1p(values.astype(float))
+    median = np.median(log_values)
+    mad = median_abs_deviation(log_values)
+
+    if mad == 0:
+        # Degenerate spread (e.g. very few cells, or near-identical counts); the bounds
+        # would collapse onto the median and drop roughly half the cells. Fall back to
+        # the absolute limits alone.
+        return np.zeros(log_values.shape, dtype=bool), np.nan, np.nan
+
+    lower = median - n_mads_lower * mad
+    upper = median + n_mads_upper * mad
+    outlier = (log_values < lower) | (log_values > upper)
+
+    return outlier, float(np.expm1(lower)), float(np.expm1(upper))
+
+
+def mad_outlier_by_group(
+    obs: pd.DataFrame, metric: str, group_key: str, n_mads_lower: float, n_mads_upper: float
+) -> pd.Series:
+    """Apply `mad_outlier` to `metric` within each group of `group_key`.
+
+    Sequencing depth varies between samples, so a cohort-wide median would over-filter
+    shallow samples and under-filter deep ones; thresholds are derived per group.
+    """
+    outlier = pd.Series(False, index=obs.index)
+
+    if group_key is None:
+        mask, lower, upper = mad_outlier(obs[metric].to_numpy(), n_mads_lower, n_mads_upper)
+        outlier.loc[:] = mask
+        print(f"----         {metric}: cohort-wide thresholds [{lower:.1f}, {upper:.1f}]; {mask.sum()} outliers")
+        return outlier
+
+    for group, index in obs.groupby(group_key, observed=True).groups.items():
+        mask, lower, upper = mad_outlier(
+            obs.loc[index, metric].to_numpy(), n_mads_lower, n_mads_upper
+        )
+        outlier.loc[index] = mask
+        if np.isnan(lower):
+            print(f"----         {metric} [{group}]: MAD is 0; absolute limits only")
+        else:
+            print(f"----         {metric} [{group}]: thresholds [{lower:.1f}, {upper:.1f}]; {mask.sum()}/{len(index)} outliers")
+
+    return outlier
 
 
 def filter_adata(adata_fname: str) -> AnnData:
@@ -19,35 +79,40 @@ def filter_adata(adata_fname: str) -> AnnData:
     adata_backed = sc.read_h5ad(args.adata_input, backed='r')  # type: ignore
     print(f"read {args.adata_input}")
 
+    obs = adata_backed.obs
+
+    group_key = args.mad_group_key
+    if group_key is not None and group_key not in obs.columns:
+        print(f"[WARNING] '{group_key}' not found in obs; computing MADs cohort-wide")
+        group_key = None
+
     # Step 2: Choose your filter condition on the `.obs` or `.var` (must be present in backed mode)
     # For example, filter cells with a certain metadata label
     # muon api is better than the scanpyt api for this...
     # mu.pp.filter_obs(adata, "pct_counts_mt", lambda x: x <= pct_counts_mt_max)
     print(f"----filter 1: pct_counts_mt_max")
-    keep_mt = adata_backed.obs['pct_counts_mt'] <= args.pct_counts_mt_max
+    keep_mt = obs['pct_counts_mt'] <= args.pct_counts_mt_max
 
     print(f"----   filter 2: doublet_score_max")
     # mu.pp.filter_obs(adata, "doublet_score", lambda x: x < doublet_score_max)
-    keep_doublet = adata_backed.obs['doublet_score'] < args.doublet_score_max
+    keep_doublet = obs['doublet_score'] < args.doublet_score_max
 
-    print(f"----      filter 3: total_counts_limits")
-    # mu.pp.filter_obs(
-    #     adata,
-    #     "total_counts",
-    #     lambda x: (x >= total_counts_limits[0]) & (x <= total_counts_limits[1]),
-    # )
-    keep_total_counts = (adata_backed.obs['total_counts'] >= args.total_counts_limits[0]) & (adata_backed.obs['total_counts'] <= args.total_counts_limits[1])
+    print(f"----      filter 3: total_counts (absolute limits + {args.n_mads_lower}/{args.n_mads_upper} MADs)")
+    keep_total_counts = (
+        (obs['total_counts'] >= args.total_counts_limits[0])
+        & (obs['total_counts'] <= args.total_counts_limits[1])
+        & ~mad_outlier_by_group(obs, 'total_counts', group_key, args.n_mads_lower, args.n_mads_upper)
+    )
 
-    print(f"----         filter 4: n_genes_by_counts_limits")
-    # mu.pp.filter_obs(
-    #     adata,
-    #     "n_genes_by_counts",
-    #     lambda x: (x >= n_genes_by_counts_limits[0])
-    #     & (x <= n_genes_by_counts_limits[1]),
-    # )
-    keep_n_genes_by_counts = (adata_backed.obs['n_genes_by_counts'] >= args.n_genes_by_counts_limits[0]) & (adata_backed.obs['n_genes_by_counts'] <= args.n_genes_by_counts_limits[1])
+    print(f"----         filter 4: n_genes_by_counts (absolute limits + {args.n_mads_lower}/{args.n_mads_upper} MADs)")
+    keep_n_genes_by_counts = (
+        (obs['n_genes_by_counts'] >= args.n_genes_by_counts_limits[0])
+        & (obs['n_genes_by_counts'] <= args.n_genes_by_counts_limits[1])
+        & ~mad_outlier_by_group(obs, 'n_genes_by_counts', group_key, args.n_mads_lower, args.n_mads_upper)
+    )
 
     keep_cells = keep_mt & keep_doublet & keep_total_counts & keep_n_genes_by_counts
+    print(f"keeping {keep_cells.sum()}/{len(keep_cells)} cells")
 
     # Step 3: Read the filtered subset into memory
     print(f"APPLY FILTER")
@@ -97,14 +162,32 @@ if __name__ == "__main__":
         type=int,
         nargs="+",
         required=True,
-        help="Minimum and maximum total UMI (unique molecular identifier) counts per cell [100, 100000]"
+        help="Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell [500, 100000]"
     )
     parser.add_argument(
         "--n-genes-by-counts-limits",
         type=int,
         nargs="+",
         required=True,
-        help="Minimum and maximum number of genes detected per cell (genes with at least one count) [100, 10000]"
+        help="Absolute minimum and maximum number of genes detected per cell (genes with at least one count) [300, 10000]"
+    )
+    parser.add_argument(
+        "--n-mads-lower",
+        type=float,
+        default=3,
+        help="Number of median absolute deviations below the median allowed for total_counts and n_genes_by_counts [3]"
+    )
+    parser.add_argument(
+        "--n-mads-upper",
+        type=float,
+        default=5,
+        help="Number of median absolute deviations above the median allowed for total_counts and n_genes_by_counts [5]"
+    )
+    parser.add_argument(
+        "--mad-group-key",
+        type=str,
+        default="sample",
+        help="Key in obs to compute MAD thresholds within; 'none' computes them cohort-wide [sample]"
     )
     parser.add_argument(
         "--adata-output",
@@ -114,4 +197,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    if args.mad_group_key.lower() == "none":
+        args.mad_group_key = None
     main(args)

@@ -20,6 +20,8 @@ workflow cohort_analysis {
 		Float doublet_score_max
 		Array[Int] total_counts_limits
 		Array[Int] n_genes_by_counts_limits
+		Float n_mads_lower
+		Float n_mads_upper
 
 		# Allen Institute's Map My Cells
 		String mmc_taxonomy
@@ -58,7 +60,7 @@ workflow cohort_analysis {
 	}
 
 	String sub_workflow_name = "cohort_analysis"
-	String sub_workflow_version = "4.0.0"
+	String sub_workflow_version = "5.0.0"
 
 	Array[Array[String]] workflow_info = [[run_timestamp, workflow_name, workflow_version, workflow_release]]
 
@@ -99,6 +101,8 @@ workflow cohort_analysis {
 			doublet_score_max = doublet_score_max,
 			total_counts_limits = total_counts_limits,
 			n_genes_by_counts_limits = n_genes_by_counts_limits,
+			n_mads_lower = n_mads_lower,
+			n_mads_upper = n_mads_upper,
 			container_registry = container_registry,
 			zones = zones
 	}
@@ -314,6 +318,8 @@ workflow cohort_analysis {
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
 		total_counts_limits: {help: "Minimum and maximum total UMI (unique molecular identifier) counts per cell. [100, 100000]"}
 		n_genes_by_counts_limits: {help: "Minimum and maximum number of genes detected per cell (genes with at least one count). [100, 10000]"}
+		n_mads_lower: {help: "Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3]"}
+		n_mads_upper: {help: "Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5]"}
 		mmc_taxonomy: {help: "Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEAAD' (human), 'Siletti' (human), or 'ABC' (mouse)."}
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}
 		allen_brain_mmc_marker_genes_json: {help: "A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data."}
@@ -438,6 +444,8 @@ task filter {
 		Float doublet_score_max
 		Array[Int] total_counts_limits
 		Array[Int] n_genes_by_counts_limits
+		Float n_mads_lower
+		Float n_mads_upper
 
 		String container_registry
 		String zones
@@ -456,6 +464,8 @@ task filter {
 			--doublet-score-max ~{doublet_score_max} \
 			--total-counts-limits ~{sep=' ' total_counts_limits} \
 			--n-genes-by-counts-limits ~{sep=' ' n_genes_by_counts_limits} \
+			--n-mads-lower ~{n_mads_lower} \
+			--n-mads-upper ~{n_mads_upper} \
 			--adata-output ~{cohort_id}.filtered.h5ad
 	>>>
 
@@ -475,7 +485,7 @@ task filter {
 	}
 
 	meta {
-		description: "Filters low-quality cells from the merged AnnData object based on mitochondrial content, doublet score, total UMI counts, and number of detected genes."
+		description: "Filters low-quality cells from the merged AnnData object based on mitochondrial content, doublet score, total UMI counts, and number of detected genes. UMI count and detected gene thresholds combine absolute limits with per-sample median absolute deviation (MAD) cutoffs."
 	}
 
 	parameter_meta {
@@ -483,8 +493,10 @@ task filter {
 		merged_adata_object: {help: "Merged AnnData object."}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
-		total_counts_limits: {help: "Minimum and maximum total UMI (unique molecular identifier) counts per cell. [100, 100000]"}
-		n_genes_by_counts_limits: {help: "Minimum and maximum number of genes detected per cell (genes with at least one count). [100, 10000]"}
+		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 100000]"}
+		n_genes_by_counts_limits: {help: "Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 10000]"}
+		n_mads_lower: {help: "Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3]"}
+		n_mads_upper: {help: "Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5]"}
 		container_registry: {help: "Container registry where workflow Docker images are hosted."}
 		zones: {help: "Space-delimited set of GCP zones to spin up compute in. ['us-central1-c us-central1-f']"}
 	}

@@ -75,6 +75,8 @@
                 "doublet_score_max": "${doublet_score_max}",
                 "total_counts_limits": "${total_counts_limits}",
                 "n_genes_by_counts_limits": "${n_genes_by_counts_limits}",
+                "n_mads_lower": "${n_mads_lower}",
+                "n_mads_upper": "${n_mads_upper}",
                 "container_registry": "${container_registry}",
                 "zones": "${zones}"
               },
@@ -98,6 +100,7 @@
               "inputs": {
                 "cohort_id": "${cohort_id}",
                 "filtered_adata_object": "${input_resources_file_path}/${cohort_workflow_name}/${cohort_id}.filtered.h5ad",
+                "mmc_taxonomy": "SEAAD",
                 "allen_brain_mmc_precomputed_stats_h5": "${input_file_path}/precomputed_stats.20231120.sea_ad.MTG.h5",
                 "raw_data_path": "${cohort_raw_data_path}",
                 "workflow_info": "${workflow_info}",
@@ -598,6 +601,9 @@
                 "sample_id": "${sample_id}",
                 "batch": "1",
                 "sex": "male",
+                "brain_region_level_1": "Midbrain mesencephalon (MB, UBERON:0001891)",
+                "brain_region_level_2": "Substantia nigra (SN, UBERON:0002038)",
+                "brain_region_level_3": "NA",
                 "team_id": "team-jakobsson",
                 "dataset_id": "${dataset_id}",
                 "cellbender_counts": "${input_resources_file_path}/${preprocess_workflow_name}/${dataset_sample_id}.cellbender.h5",
@@ -823,13 +829,15 @@
       "pct_counts_mt_max": 10,
       "doublet_score_max": "0.2",
       "total_counts_limits": [
-        100,
+        500,
         100000
       ],
       "n_genes_by_counts_limits": [
-        100,
+        300,
         10000
       ],
+      "n_mads_lower": 3,
+      "n_mads_upper": 5,
       "norm_target_sum": 10000,
       "n_top_genes": 3000,
       "n_comps": 30,
@@ -839,19 +847,17 @@
       "batch_key": "batch_id",
       "n_neighbors": 15,
       "leiden_res": [
-        0.05,
-        0.1,
         0.2,
-        0.4
+        0.5,
+        1.0
       ],
       "groups": [
         "sample",
         "batch",
         "cell_type",
-        "leiden_res_0.05",
-        "leiden_res_0.10",
         "leiden_res_0.20",
-        "leiden_res_0.40"
+        "leiden_res_0.50",
+        "leiden_res_1.0"
       ],
       "features": [
         "n_genes_by_counts",

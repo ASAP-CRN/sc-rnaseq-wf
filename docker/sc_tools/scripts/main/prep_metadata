@@ -10,7 +10,15 @@ from helpers import anndata_from_h5
 
 
 def prep_metadata(
-    adata: AnnData, sample_id: str, batch_id: str, sex: str, dataset_id: str, team_id: str
+    adata: AnnData,
+    sample_id: str,
+    batch_id: str,
+    sex: str,
+    brain_region_level_1: str,
+    brain_region_level_2: str,
+    brain_region_level_3: str,
+    dataset_id: str,
+    team_id: str
 ):
     # Set CPUs to use for parallel computing
     sc.settings.n_jobs = -1
@@ -34,6 +42,9 @@ def prep_metadata(
     adata.obs["sample"] = sample_id
     adata.obs["batch"] = batch_id
     adata.obs["sex"] = sex
+    adata.obs["brain_region_level_1"] = brain_region_level_1
+    adata.obs["brain_region_level_2"] = brain_region_level_2
+    adata.obs["brain_region_level_3"] = brain_region_level_3
     adata.obs["team"] = team_id
     adata.obs["dataset"] = dataset_id
     adata.obs["batch_id"] = f"{team_id}_{dataset_id}_{batch_id}"
@@ -43,7 +54,17 @@ def prep_metadata(
 def main(args: argparse.Namespace):
     # Load the data from cellbender output
     adata = anndata_from_h5(args.adata_input)
-    adata = prep_metadata(adata, args.sample_id, args.batch, args.sex, args.dataset, args.team)
+    adata = prep_metadata(
+        adata,
+        args.sample_id,
+        args.batch,
+        args.sex,
+        args.brain_region_level_1,
+        args.brain_region_level_2,
+        args.brain_region_level_3,
+        args.dataset,
+        args.team
+    )
     adata.write_h5ad(filename=args.adata_output)
 
 
@@ -70,8 +91,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--sex",
         type=str,
-        required=True,
+        required=False,
         help="Genetically derived sex",
+    )
+    parser.add_argument(
+        "--brain-region-level-1",
+        type=str,
+        required=False,
+        help="Abbreviation of most granular anatomical region (Level 1).",
+    )
+    parser.add_argument(
+        "--brain-region-level-2",
+        type=str,
+        required=False,
+        help="Abbreviation of intermediate level anatomical region (Level 2).",
+    )
+    parser.add_argument(
+        "--brain-region-level-3",
+        type=str,
+        required=False,
+        help="Abbreviation of coarse level anatomical region (Level 3).",
     )
     parser.add_argument(
         "--dataset",

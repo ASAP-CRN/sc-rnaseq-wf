@@ -50,7 +50,7 @@ if __name__ == "__main__":
         type=float,
         nargs="+",
         required=True,
-        help="Leiden resolutions which are the parameter values controlling the coarseness of the clustering [0.05, 0.1, 0.2, 0.4]",
+        help="Leiden resolutions which are the parameter values controlling the coarseness of the clustering [0.2, 0.5, 1.0]",
     )
     parser.add_argument(
         "--adata-input",
