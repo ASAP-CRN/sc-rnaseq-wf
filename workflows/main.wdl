@@ -20,7 +20,7 @@ workflow sc_rnaseq_analysis {
 		# Filtering parameters
 		Int pct_counts_mt_max = 10
 		Float doublet_score_max = 0.2
-		Array[Int] total_counts_limits = [500, 100000]
+		Array[Int] total_counts_limits = [500, 150000]
 		Array[Int] n_genes_by_counts_limits = [300, 10000]
 		Float n_mads_lower = 3
 		Float n_mads_upper = 5
@@ -31,7 +31,7 @@ workflow sc_rnaseq_analysis {
 
 		# Normalization parameters
 		Int norm_target_sum = 10000
-		Int n_top_genes = 3000
+		Int n_top_genes = 15000
 		Int n_comps = 30
 
 		# Sample integration
@@ -309,14 +309,14 @@ workflow sc_rnaseq_analysis {
 		cellbender_fpr: {help: "Cellbender false positive rate. [0.0]"}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
-		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 100000]"}
+		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000]"}
 		n_genes_by_counts_limits: {help: "Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 10000]"}
 		n_mads_lower: {help: "Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3]"}
 		n_mads_upper: {help: "Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5]"}
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}
 		allen_brain_mmc_marker_genes_json: {help: "A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data."}
 		norm_target_sum: {help: "The total count value that each cell will be normalized to. [10000]"}
-		n_top_genes: {help: "Number of HVG genes to keep. [8000]"}
+		n_top_genes: {help: "Number of HVG genes to keep. [15000]"}
 		n_comps: {help: "Number of principal components to compute. [30]"}
 		scvi_latent_key: {help: "Latent key to save the scVI latent to. ['X_scVI']"}
 		scanvi_latent_key: {help: "Latent key to save the scANVI latent to. ['X_scANVI']"}

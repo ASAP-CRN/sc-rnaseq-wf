@@ -162,7 +162,7 @@ if __name__ == "__main__":
         type=int,
         nargs="+",
         required=True,
-        help="Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell [500, 100000]"
+        help="Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell [500, 150000]"
     )
     parser.add_argument(
         "--n-genes-by-counts-limits",
