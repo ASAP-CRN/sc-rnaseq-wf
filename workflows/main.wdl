@@ -18,6 +18,7 @@ workflow sc_rnaseq_analysis {
 		Float cellbender_fpr = 0.0
 
 		# Filtering parameters
+		Int n_cells = 50000
 		Int pct_counts_mt_max = 10
 		Float doublet_score_max = 0.2
 		Array[Int] total_counts_limits = [500, 150000]
@@ -120,6 +121,7 @@ workflow sc_rnaseq_analysis {
 					project_sample_ids = preprocess.project_sample_ids,
 					preprocessed_adata_objects = preprocess.initial_adata_object,
 					preprocessing_output_file_paths = preprocessing_output_file_paths,
+					n_cells = n_cells,
 					pct_counts_mt_max = pct_counts_mt_max,
 					doublet_score_max = doublet_score_max,
 					total_counts_limits = total_counts_limits,
@@ -162,6 +164,7 @@ workflow sc_rnaseq_analysis {
 				project_sample_ids = flatten(preprocess.project_sample_ids),
 				preprocessed_adata_objects = flatten(preprocess.initial_adata_object),
 				preprocessing_output_file_paths = flatten(preprocessing_output_file_paths),
+				n_cells = n_cells,
 				pct_counts_mt_max = pct_counts_mt_max,
 				doublet_score_max = doublet_score_max,
 				total_counts_limits = total_counts_limits,
@@ -227,6 +230,9 @@ workflow sc_rnaseq_analysis {
 		Array[File?] project_merged_adata_object = project_cohort_analysis.merged_adata_object
 		Array[File?] project_qc_initial_metadata_csv = project_cohort_analysis.qc_initial_metadata_csv
 		Array[Array[File]?] project_qc_plots_png = project_cohort_analysis.qc_plots_png
+		Array[File?] project_merged_downsampled_adata_object = project_cohort_analysis.merged_downsampled_adata_object
+		Array[File?] project_qc_initial_metadata_downsampled_csv = project_cohort_analysis.qc_initial_metadata_downsampled_csv
+		Array[Array[File]?] project_qc_plots_downsampled_png = project_cohort_analysis.qc_plots_downsampled_png
 		Array[File?] project_filtered_adata_object = project_cohort_analysis.filtered_adata_object
 		Array[File?] project_mmc_extended_results_json = project_cohort_analysis.mmc_extended_results_json
 		Array[File?] project_mmc_results_csv = project_cohort_analysis.mmc_results_csv
@@ -266,6 +272,9 @@ workflow sc_rnaseq_analysis {
 		File? cohort_merged_adata_object = cross_team_cohort_analysis.merged_adata_object
 		File? cohort_qc_initial_metadata_csv = cross_team_cohort_analysis.qc_initial_metadata_csv
 		Array[File]? cohort_qc_plots_png = cross_team_cohort_analysis.qc_plots_png
+		File? cohort_merged_downsampled_adata_object = cross_team_cohort_analysis.merged_downsampled_adata_object
+		File? cohort_qc_initial_metadata_downsampled_csv = cross_team_cohort_analysis.qc_initial_metadata_downsampled_csv
+		Array[File]? cohort_qc_plots_downsampled_png = cross_team_cohort_analysis.qc_plots_downsampled_png
 		File? cohort_filtered_adata_object = cross_team_cohort_analysis.filtered_adata_object
 		File? cohort_mmc_extended_results_json = cross_team_cohort_analysis.mmc_extended_results_json
 		File? cohort_mmc_results_csv = cross_team_cohort_analysis.mmc_results_csv
@@ -307,6 +316,7 @@ workflow sc_rnaseq_analysis {
 		projects: {help: "The project ID, set of samples and their associated reads and metadata, output bucket locations, sc data type, and whether or not to run project-level cohort analysis."}
 		cellranger_reference_data: {help: "Cellranger transcriptome reference data; see https://support.10xgenomics.com/single-cell-gene-expression/software/downloads/latest."}
 		cellbender_fpr: {help: "Cellbender false positive rate. [0.0]"}
+		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [50000]"}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
 		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000]"}

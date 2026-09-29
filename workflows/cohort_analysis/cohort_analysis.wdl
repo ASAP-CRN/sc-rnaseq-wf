@@ -16,6 +16,7 @@ workflow cohort_analysis {
 		Array[String] preprocessing_output_file_paths = []
 
 		# Filtering parameters
+		Int n_cells
 		Int pct_counts_mt_max
 		Float doublet_score_max
 		Array[Int] total_counts_limits
@@ -79,6 +80,7 @@ workflow cohort_analysis {
 		input:
 			cohort_id = cohort_id,
 			preprocessed_adata_objects = preprocessed_adata_objects,
+			n_cells = n_cells,
 			raw_data_path = raw_data_path,
 			workflow_info = workflow_info,
 			billing_project = billing_project,
@@ -213,9 +215,12 @@ workflow cohort_analysis {
 		],
 		[
 			merge_and_plot_qc_metrics.merged_adata_object,
-			merge_and_plot_qc_metrics.qc_initial_metadata_csv
+			merge_and_plot_qc_metrics.qc_initial_metadata_csv,
+			merge_and_plot_qc_metrics.merged_downsampled_adata_object,
+			merge_and_plot_qc_metrics.qc_initial_metadata_downsampled_csv
 		],
 		merge_and_plot_qc_metrics.qc_plots_png,
+		merge_and_plot_qc_metrics.qc_plots_downsampled_png,
 		[
 			map_cell_types.mmc_extended_results_json,
 			map_cell_types.mmc_results_csv,
@@ -263,6 +268,9 @@ workflow cohort_analysis {
 		File merged_adata_object = merge_and_plot_qc_metrics.merged_adata_object #!FileCoercion
 		File qc_initial_metadata_csv = merge_and_plot_qc_metrics.qc_initial_metadata_csv #!FileCoercion
 		Array[File] qc_plots_png = merge_and_plot_qc_metrics.qc_plots_png #!FileCoercion
+		File merged_downsampled_adata_object = merge_and_plot_qc_metrics.merged_downsampled_adata_object #!FileCoercion
+		File qc_initial_metadata_downsampled_csv = merge_and_plot_qc_metrics.qc_initial_metadata_downsampled_csv #!FileCoercion
+		Array[File] qc_plots_downsampled_png = merge_and_plot_qc_metrics.qc_plots_downsampled_png #!FileCoercion
 		File filtered_adata_object = filter.filtered_adata_object
 		File mmc_extended_results_json = map_cell_types.mmc_extended_results_json #!FileCoercion
 		File mmc_results_csv = map_cell_types.mmc_results_csv #!FileCoercion
@@ -298,7 +306,7 @@ workflow cohort_analysis {
 	}
 
 	meta {
-		description: "Merges preprocessed per-sample AnnData objects and runs QC filtering, Allen Brain MMC cell type mapping, normalization, scVI/scANVI integration, Leiden clustering, UMAP visualization, Harmony batch correction, and integration quality metrics for a cohort."
+		description: "Merges and downsamples preprocessed per-sample AnnData objects and runs QC filtering, Allen Brain MMC cell type mapping, normalization, scVI/scANVI integration, Leiden clustering, UMAP visualization, Harmony batch correction, and integration quality metrics for a cohort."
 	}
 
 	parameter_meta {
@@ -306,6 +314,7 @@ workflow cohort_analysis {
 		project_sample_ids: {help: "Associated team ID, sample ID, and dataset DOI URL; used to generate a sample list."}
 		preprocessed_adata_objects: {help: "An array of preprocessed AnnData objects to run cohort analysis on."}
 		preprocessing_output_file_paths: {help: "Selected preprocessed output files to upload to the staging bucket alongside selected cohort analysis output files."}
+		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [50000]"}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
 		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000]"}
@@ -343,6 +352,8 @@ task merge_and_plot_qc_metrics {
 		String cohort_id
 		Array[File] preprocessed_adata_objects
 
+		Int n_cells
+
 		String raw_data_path
 		Array[Array[String]] workflow_info
 		String billing_project
@@ -364,14 +375,19 @@ task merge_and_plot_qc_metrics {
 
 		merge_and_plot_qc \
 			--adata-objects-fofn adata_samples_paths.tsv \
+			--n-cells ~{n_cells} \
 			--adata-output ~{cohort_id}.merged_cleaned_unfiltered.h5ad \
-			--output-metadata-file ~{cohort_id}.initial_metadata.csv
+			--output-metadata-file ~{cohort_id}.initial_metadata.csv \
+			--ds-adata-output ~{cohort_id}.merged_cleaned_unfiltered.downsampled.h5ad \
+			--ds-output-metadata-file ~{cohort_id}.initial_metadata.downsampled.csv
 
-		mv "plots/violin_n_genes_by_counts.png" "plots/~{cohort_id}.n_genes_by_counts.violin.png"
-		mv "plots/violin_total_counts.png" "plots/~{cohort_id}.total_counts.violin.png"
-		mv "plots/violin_pct_counts_mt.png" "plots/~{cohort_id}.pct_counts_mt.violin.png"
-		mv "plots/violin_pct_counts_rb.png" "plots/~{cohort_id}.pct_counts_rb.violin.png"
-		mv "plots/violin_doublet_score.png" "plots/~{cohort_id}.doublet_score.violin.png"
+		for dir in plots ds_plots; do
+			suffix=""
+			[ "$dir" = "ds_plots" ] && suffix=".downsampled"
+			for metric in n_genes_by_counts total_counts pct_counts_mt pct_counts_rb doublet_score; do
+				mv "$dir/violin_$metric.png" "$dir/~{cohort_id}.$metric$suffix.violin.png"
+			done
+		done
 
 		upload_outputs \
 			-b ~{billing_project} \
@@ -383,19 +399,34 @@ task merge_and_plot_qc_metrics {
 			-o plots/"~{cohort_id}.total_counts.violin.png" \
 			-o plots/"~{cohort_id}.pct_counts_mt.violin.png" \
 			-o plots/"~{cohort_id}.pct_counts_rb.violin.png" \
-			-o plots/"~{cohort_id}.doublet_score.violin.png"
+			-o plots/"~{cohort_id}.doublet_score.violin.png" \
+			-o "~{cohort_id}.merged_cleaned_unfiltered.downsampled.h5ad" \
+			-o "~{cohort_id}.initial_metadata.downsampled.csv" \
+			-o ds_plots/"~{cohort_id}.n_genes_by_counts.violin.downsampled.png" \
+			-o ds_plots/"~{cohort_id}.total_counts.violin.downsampled.png" \
+			-o ds_plots/"~{cohort_id}.pct_counts_mt.violin.downsampled.png" \
+			-o ds_plots/"~{cohort_id}.pct_counts_rb.violin.downsampled.png" \
+			-o ds_plots/"~{cohort_id}.doublet_score.violin.downsampled.png"
 	>>>
 
 	output {
 		String merged_adata_object = "~{raw_data_path}/~{cohort_id}.merged_cleaned_unfiltered.h5ad"
 		String qc_initial_metadata_csv = "~{raw_data_path}/~{cohort_id}.initial_metadata.csv"
-
 		Array[String] qc_plots_png = [
 			"~{raw_data_path}/~{cohort_id}.n_genes_by_counts.violin.png",
 			"~{raw_data_path}/~{cohort_id}.total_counts.violin.png",
 			"~{raw_data_path}/~{cohort_id}.pct_counts_mt.violin.png",
 			"~{raw_data_path}/~{cohort_id}.pct_counts_rb.violin.png",
 			"~{raw_data_path}/~{cohort_id}.doublet_score.violin.png"
+		]
+		String merged_downsampled_adata_object = "~{raw_data_path}/~{cohort_id}.merged_cleaned_unfiltered.downsampled.h5ad"
+		String qc_initial_metadata_downsampled_csv = "~{raw_data_path}/~{cohort_id}.initial_metadata.downsampled.csv"
+		Array[String] qc_plots_downsampled_png = [
+			"~{raw_data_path}/~{cohort_id}.n_genes_by_counts.violin.downsampled.png",
+			"~{raw_data_path}/~{cohort_id}.total_counts.violin.downsampled.png",
+			"~{raw_data_path}/~{cohort_id}.pct_counts_mt.violin.downsampled.png",
+			"~{raw_data_path}/~{cohort_id}.pct_counts_rb.violin.downsampled.png",
+			"~{raw_data_path}/~{cohort_id}.doublet_score.violin.downsampled.png"
 		]
 	}
 
@@ -411,11 +442,12 @@ task merge_and_plot_qc_metrics {
 	}
 
 	meta {
-		description: "Merges sample-level AnnData objects to a single cohort-level AnnData object and generates pre-filtering QC violin plots for key metrics."
+		description: "Merges and downsamples sample-level AnnData objects to a single cohort-level AnnData object and generates pre-filtering QC violin plots for key metrics."
 	}
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
+		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [50000]"}
 		preprocessed_adata_objects: {help: "An array of preprocessed AnnData objects to run cohort analysis on."}
 		raw_data_path: {help: "Raw data bucket path for merged adata and QC plots outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
 		workflow_info: {help: "UTC timestamp, workflow name, workflow version, and GitHub release; stored in the file-level manifest and final manifest with all saved files."}
