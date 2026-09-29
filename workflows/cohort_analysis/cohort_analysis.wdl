@@ -91,7 +91,7 @@ workflow cohort_analysis {
 	call filter {
 		input:
 			cohort_id = cohort_id,
-			merged_adata_object = merge_and_plot_qc_metrics.merged_adata_object, #!FileCoercion
+			merged_downsampled_adata_object = merge_and_plot_qc_metrics.merged_downsampled_adata_object, #!FileCoercion
 			pct_counts_mt_max = pct_counts_mt_max,
 			doublet_score_max = doublet_score_max,
 			total_counts_limits = total_counts_limits,
@@ -460,7 +460,7 @@ task merge_and_plot_qc_metrics {
 task filter {
 	input {
 		String cohort_id
-		File merged_adata_object
+		File merged_downsampled_adata_object
 
 		Int pct_counts_mt_max
 		Float doublet_score_max
@@ -473,15 +473,15 @@ task filter {
 		String zones
 	}
 
-	Int calc_mem_gb = ceil(size(merged_adata_object, "GB") * 18 + 20)
+	Int calc_mem_gb = ceil(size(merged_downsampled_adata_object, "GB") * 18 + 20)
 	Int mem_gb = if calc_mem_gb > 624 then 624 else calc_mem_gb
-	Int disk_size = ceil(size(merged_adata_object, "GB") * 4 + 20)
+	Int disk_size = ceil(size(merged_downsampled_adata_object, "GB") * 4 + 20)
 
 	command <<<
 		set -euo pipefail
 
 		filter \
-			--adata-input ~{merged_adata_object} \
+			--adata-input ~{merged_downsampled_adata_object} \
 			--pct-counts-mt-max ~{pct_counts_mt_max} \
 			--doublet-score-max ~{doublet_score_max} \
 			--total-counts-limits ~{sep=' ' total_counts_limits} \
@@ -512,7 +512,7 @@ task filter {
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
-		merged_adata_object: {help: "Merged AnnData object."}
+		merged_downsampled_adata_object: {help: "Merged and downsampled AnnData object."}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
 		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000]"}
