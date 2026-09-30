@@ -22,7 +22,7 @@ workflow sc_rnaseq_analysis {
 		Int pct_counts_mt_max = 10
 		Float doublet_score_max = 0.2
 		Array[Int] total_counts_limits = [500, 150000]
-		Array[Int] n_genes_by_counts_limits = [300, 10000]
+		Array[Int] n_genes_by_counts_limits = [300, 15000]
 		Float n_mads_lower = 3
 		Float n_mads_upper = 5
 
@@ -320,7 +320,7 @@ workflow sc_rnaseq_analysis {
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
 		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000]"}
-		n_genes_by_counts_limits: {help: "Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 10000]"}
+		n_genes_by_counts_limits: {help: "Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 15000]"}
 		n_mads_lower: {help: "Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3]"}
 		n_mads_upper: {help: "Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5]"}
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}

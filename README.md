@@ -58,7 +58,7 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | Float? | pct_counts_mt_max | Maximum percentage of mitochondrial gene counts allowed per cell. [10] |
 | Int? | doublet_score_max | Maximum doublet detection score threshold. [0.2] |
 | Array[Int]? | total_counts_limits | Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000] |
-| Array[Int]? | n_genes_by_counts_limits | Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 10000] |
+| Array[Int]? | n_genes_by_counts_limits | Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 15000] |
 | Float? | n_mads_lower | Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3] |
 | Float? | n_mads_upper | Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5] |
 | File? | allen_brain_mmc_precomputed_stats_h5 | A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy).  |
