@@ -27,6 +27,7 @@
 
 - _processing_: [`process`](./main/process)
     - Normalize + feature selection (i.e. identification of highly variable genes)
+        - Human only: the 17 Kamath et al. 2022 dopaminergic neuron marker genes ([`da_marker_genes_kamath_hm.txt`](../resources/da_marker_genes_kamath_hm.txt)) are kept in addition to the top `n_top_genes` HVGs
     - Add PCA (for `harmony` integration)
 
 
