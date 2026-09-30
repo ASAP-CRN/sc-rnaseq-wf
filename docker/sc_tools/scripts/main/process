@@ -144,7 +144,7 @@ if __name__ == "__main__":
         "--n-top-genes",
         type=int,
         required=True,
-        help="Number of HVG genes to keep [15000]",
+        help="Number of HVG genes to keep [3000]",
     )
     parser.add_argument(
         "--n-comps",

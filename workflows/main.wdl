@@ -18,7 +18,7 @@ workflow sc_rnaseq_analysis {
 		Float cellbender_fpr = 0.0
 
 		# Filtering parameters
-		Int n_cells = 50000
+		Int n_cells = 1000000
 		Int pct_counts_mt_max = 10
 		Float doublet_score_max = 0.2
 		Array[Int] total_counts_limits = [500, 150000]
@@ -32,7 +32,7 @@ workflow sc_rnaseq_analysis {
 
 		# Normalization parameters
 		Int norm_target_sum = 10000
-		Int n_top_genes = 15000
+		Int n_top_genes = 3000
 		Int n_comps = 30
 
 		# Sample integration
@@ -316,7 +316,7 @@ workflow sc_rnaseq_analysis {
 		projects: {help: "The project ID, set of samples and their associated reads and metadata, output bucket locations, sc data type, and whether or not to run project-level cohort analysis."}
 		cellranger_reference_data: {help: "Cellranger transcriptome reference data; see https://support.10xgenomics.com/single-cell-gene-expression/software/downloads/latest."}
 		cellbender_fpr: {help: "Cellbender false positive rate. [0.0]"}
-		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [50000]"}
+		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [1000000]"}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
 		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000]"}
@@ -326,7 +326,7 @@ workflow sc_rnaseq_analysis {
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}
 		allen_brain_mmc_marker_genes_json: {help: "A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data."}
 		norm_target_sum: {help: "The total count value that each cell will be normalized to. [10000]"}
-		n_top_genes: {help: "Number of HVG genes to keep. [15000]"}
+		n_top_genes: {help: "Number of HVG genes to keep. [3000]"}
 		n_comps: {help: "Number of principal components to compute. [30]"}
 		scvi_latent_key: {help: "Latent key to save the scVI latent to. ['X_scVI']"}
 		scanvi_latent_key: {help: "Latent key to save the scANVI latent to. ['X_scANVI']"}

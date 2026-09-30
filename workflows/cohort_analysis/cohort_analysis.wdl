@@ -314,7 +314,7 @@ workflow cohort_analysis {
 		project_sample_ids: {help: "Associated team ID, sample ID, and dataset DOI URL; used to generate a sample list."}
 		preprocessed_adata_objects: {help: "An array of preprocessed AnnData objects to run cohort analysis on."}
 		preprocessing_output_file_paths: {help: "Selected preprocessed output files to upload to the staging bucket alongside selected cohort analysis output files."}
-		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [50000]"}
+		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [1000000]"}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
 		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000]"}
@@ -324,7 +324,7 @@ workflow cohort_analysis {
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}
 		allen_brain_mmc_marker_genes_json: {help: "A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data."}
 		norm_target_sum: {help: "The total count value that each cell will be normalized to. [10000]"}
-		n_top_genes: {help: "Number of HVG genes to keep. [15000]"}
+		n_top_genes: {help: "Number of HVG genes to keep. [3000]"}
 		n_comps: {help: "Number of principal components to compute. [30]"}
 		scvi_latent_key: {help: "Latent key to save the scVI latent to. ['X_scVI']"}
 		scanvi_latent_key: {help: "Latent key to save the scANVI latent to. ['X_scANVI']"}
@@ -447,7 +447,7 @@ task merge_and_plot_qc_metrics {
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
-		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [50000]"}
+		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [1000000]"}
 		preprocessed_adata_objects: {help: "An array of preprocessed AnnData objects to run cohort analysis on."}
 		raw_data_path: {help: "Raw data bucket path for merged adata and QC plots outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
 		workflow_info: {help: "UTC timestamp, workflow name, workflow version, and GitHub release; stored in the file-level manifest and final manifest with all saved files."}
@@ -673,7 +673,7 @@ task normalize {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
 		filtered_adata_object: {help: "QC-filtered AnnData object."}
 		norm_target_sum: {help: "The total count value that each cell will be normalized to. [10000]"}
-		n_top_genes: {help: "Number of HVG genes to keep. [15000]"}
+		n_top_genes: {help: "Number of HVG genes to keep. [3000]"}
 		n_comps: {help: "Number of principal components to compute. [30]"}
 		batch_key: {help: "Key in AnnData object for batch information. ['batch_id']"}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
