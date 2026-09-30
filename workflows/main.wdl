@@ -373,7 +373,7 @@ task get_workflow_name {
 		cpu: 2
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "4 GB"
-		disks: "local-disk 10 HDD"
+		disks: "local-disk 10 SSD"
 		preemptible: 3
 		zones: zones
 	}

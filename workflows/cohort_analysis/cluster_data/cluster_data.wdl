@@ -145,7 +145,7 @@ task integrate_sample_data {
 		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: 4
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		bootDiskSizeGb: 40
 		zones: zones
 		gpuType: "nvidia-tesla-t4"
@@ -230,7 +230,7 @@ task assign_remaining_cells {
 		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: 16
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		bootDiskSizeGb: 40
 		zones: zones
 		gpuType: "nvidia-tesla-t4"
@@ -295,7 +295,7 @@ task cluster_cells {
 		cpu: 16
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones

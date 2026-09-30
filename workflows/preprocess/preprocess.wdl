@@ -254,7 +254,7 @@ task check_output_files_exist {
 		cpu: 2
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "4 GB"
-		disks: "local-disk 20 HDD"
+		disks: "local-disk 20 SSD"
 		preemptible: 3
 		zones: zones
 	}
@@ -366,7 +366,7 @@ task cellranger_count {
 		cpu: threads
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		bootDiskSizeGb: 40
 		zones: zones
 	}
@@ -452,7 +452,7 @@ task remove_technical_artifacts {
 		docker: "~{container_registry}/cellbender:0.3.0"
 		cpu: 4
 		memory: "64 GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones
@@ -531,7 +531,7 @@ task counts_to_adata {
 		cpu: 4
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "32 GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones
