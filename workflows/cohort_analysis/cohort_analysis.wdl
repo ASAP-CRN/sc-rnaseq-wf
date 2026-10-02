@@ -15,6 +15,9 @@ workflow cohort_analysis {
 		# If provided, these files will be uploaded to the staging bucket alongside other intermediate files made by this workflow
 		Array[String] preprocessing_output_file_paths = []
 
+		# Kamath et al. 2022 dopaminergic neuron spike-in (human only)
+		File? kamath_post_qc_adata_object
+
 		# Filtering parameters
 		Int n_cells
 		Int pct_counts_mt_max
@@ -144,10 +147,24 @@ workflow cohort_analysis {
 			zones = zones
 	}
 
+	if (defined(kamath_post_qc_adata_object)) {
+		call spike_in_da {
+			input:
+				cohort_id = cohort_id,
+				kamath_post_qc_adata_object = select_first([kamath_post_qc_adata_object]),
+				mmc_adata_object = add_mapped_cell_types.mmc_adata_object,
+				all_genes_csv = normalize.all_genes_csv, #!FileCoercion
+				norm_target_sum = norm_target_sum,
+				n_comps = n_comps,
+				container_registry = container_registry,
+				zones = zones
+		}
+	}
+
 	call ClusterData.cluster_data {
 		input:
 			cohort_id = cohort_id,
-			mmc_adata_object = add_mapped_cell_types.mmc_adata_object,
+			mmc_adata_object = select_first([spike_in_da.spiked_da_adata_object, add_mapped_cell_types.mmc_adata_object]),
 			scvi_latent_key = scvi_latent_key,
 			scanvi_latent_key = scanvi_latent_key,
 			scanvi_predictions_key = scanvi_predictions_key,
@@ -280,6 +297,7 @@ workflow cohort_analysis {
 		File hvg_genes_csv = normalize.hvg_genes_csv #!FileCoercion
 		File mmc_adata_object = add_mapped_cell_types.mmc_adata_object
 		File mmc_results_parquet = add_mapped_cell_types.mmc_results_parquet #!FileCoercion
+		File? spiked_da_adata_object = spike_in_da.spiked_da_adata_object
 
 		# Clustering output
 		File integrated_adata_object = cluster_data.integrated_adata_object
@@ -306,7 +324,7 @@ workflow cohort_analysis {
 	}
 
 	meta {
-		description: "Merges and downsamples preprocessed per-sample AnnData objects and runs QC filtering, Allen Brain MMC cell type mapping, normalization, scVI/scANVI integration, Leiden clustering, UMAP visualization, Harmony batch correction, and integration quality metrics for a cohort."
+		description: "Merges and downsamples preprocessed per-sample AnnData objects and runs QC filtering, Allen Brain MMC cell type mapping, normalization, optional Kamath et al. 2022 DA neuron spike-in, scVI/scANVI integration, Leiden clustering, UMAP visualization, Harmony batch correction, and integration quality metrics for a cohort."
 	}
 
 	parameter_meta {
@@ -314,6 +332,7 @@ workflow cohort_analysis {
 		project_sample_ids: {help: "Associated team ID, sample ID, and dataset DOI URL; used to generate a sample list."}
 		preprocessed_adata_objects: {help: "An array of preprocessed AnnData objects to run cohort analysis on."}
 		preprocessing_output_file_paths: {help: "Selected preprocessed output files to upload to the staging bucket alongside selected cohort analysis output files."}
+		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object (Ensembl IDs as var_names) whose dopaminergic neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels; human only. If not provided, no cells are spiked in."}
 		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [1000000]"}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
@@ -746,6 +765,67 @@ task add_mapped_cell_types {
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
 		workflow_info: {help: "UTC timestamp, workflow name, workflow version, and GitHub release; stored in the file-level manifest and final manifest with all saved files."}
 		billing_project: {help: "Billing project to charge GCP costs."}
+		container_registry: {help: "Container registry where workflow Docker images are hosted."}
+		zones: {help: "Space-delimited set of GCP zones to spin up compute in. ['us-central1-c us-central1-f']"}
+	}
+}
+
+task spike_in_da {
+	input {
+		String cohort_id
+		File kamath_post_qc_adata_object
+		File mmc_adata_object
+		File all_genes_csv
+
+		Int norm_target_sum
+		Int n_comps
+
+		String container_registry
+		String zones
+	}
+
+	Int calc_mem_gb = ceil(size([mmc_adata_object, kamath_post_qc_adata_object], "GB") * 6 + 20)
+	Int mem_gb = if calc_mem_gb > 624 then 624 else calc_mem_gb
+	Int disk_size = ceil(size([mmc_adata_object, kamath_post_qc_adata_object], "GB") * 4 + 20)
+
+	command <<<
+		set -euo pipefail
+
+		prep_da_spike_in \
+			--adata-input ~{kamath_post_qc_adata_object} \
+			--adata-cohort ~{mmc_adata_object} \
+			--all-genes-csv ~{all_genes_csv} \
+			--norm-target-sum ~{norm_target_sum} \
+			--n-comps ~{n_comps} \
+			--adata-output "~{cohort_id}.mmc.kamath_da_spike_in.h5ad"
+	>>>
+
+	output {
+		File spiked_da_adata_object = "~{cohort_id}.mmc.kamath_da_spike_in.h5ad"
+	}
+
+	runtime {
+		docker: "~{container_registry}/sc_tools:1.3.0"
+		cpu: 4
+		cpuPlatform: "Intel Cascade Lake"
+		memory: "~{mem_gb} GB"
+		disks: "local-disk ~{disk_size} HDD"
+		preemptible: 3
+		bootDiskSizeGb: 40
+		zones: zones
+	}
+
+	meta {
+		description: "Formats Kamath et al. 2022 dopaminergic (DA) neurons to match the cohort (gene symbols, per-donor batch_id, QC metrics, raw counts and log1p normalized expression, cell cycle scores, DA subtype cell_type labels), spikes them into the cohort's MMC-labeled AnnData object restricted to the cohort's HVGs, and recomputes PCA on all cells. Spike-in cells are flagged with obs['is_spike_in']."
+	}
+
+	parameter_meta {
+		cohort_id: {help: "Name of the cohort; used to name output files."}
+		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object with Ensembl IDs as var_names; only cells with a DA subtype label are spiked in."}
+		mmc_adata_object: {help: "Normalized, HVG-subset AnnData object with MMC cell type labels to spike the DA neurons into."}
+		all_genes_csv: {help: "Cohort gene metadata CSV from normalize (gene symbols as index, Ensembl IDs in 'gene_id'); used to map spike-in Ensembl IDs to the cohort's gene symbols."}
+		norm_target_sum: {help: "The total count value that each spike-in cell will be normalized to; matches the cohort. [10000]"}
+		n_comps: {help: "Number of principal components to compute on the merged AnnData object. [30]"}
 		container_registry: {help: "Container registry where workflow Docker images are hosted."}
 		zones: {help: "Space-delimited set of GCP zones to spin up compute in. ['us-central1-c us-central1-f']"}
 	}

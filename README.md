@@ -52,6 +52,7 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | String | organism | Organism; used to select `workflow_name`. Options: 'human' or 'mouse'. If human, `pmdbs_sc_rnaseq` will be the workflow name (i.e., bucket folder name) and if mouse, `mouse_sc_rnaseq` will be selected. |
 | String | cohort_id | Name of the cohort; used to name output files during cross-team cohort analysis. |
 | Array[[Project](#project)] | projects | The project ID, set of samples and their associated reads and metadata, output bucket locations, and whether or not to run project-level cohort analysis. |
+| File? | kamath_post_qc_adata_object | Downsampled and QC-filtered Kamath et al. 2022 AnnData object (e.g. `kamath_merged_da_all_non_da_13000_postQC.h5ad`; see [sc_tools scripts README](docker/sc_tools/scripts/README.md)). Its dopaminergic (DA) neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels (e.g. SOX6_AGTR1, CALB1_GEM); human only. If not provided, no cells are spiked in. |
 | File | cellranger_reference_data | Cellranger transcriptome reference data; see https://www.10xgenomics.com/support/software/cell-ranger/downloads/previous-versions. |
 | Float? | cellbender_fpr | Cellbender false positive rate for signal removal. [0.0] |
 | Int? | n_cells | Number of cells to keep. Cells are drawn uniformly at random without replacement. [1000000] |

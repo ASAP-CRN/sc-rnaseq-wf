@@ -79,7 +79,7 @@ workflow cluster_data {
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files during cross-team cohort analysis."}
-		mmc_adata_object: {help: "AnnData object with MMC cell type labels from cohort_analysis."}
+		mmc_adata_object: {help: "AnnData object with MMC cell type labels from cohort_analysis; includes Kamath et al. 2022 DA neuron spike-in cells (obs['is_spike_in']) with DA subtype labels if provided."}
 		scvi_latent_key: {help: "Latent key to save the scVI latent to. ['X_scVI']"}
 		scanvi_latent_key: {help: "Latent key to save the scANVI latent to. ['X_scANVI']"}
 		scanvi_predictions_key: {help: "scANVI cell type predictions column name. ['C_scANVI']"}
@@ -159,7 +159,7 @@ task integrate_sample_data {
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
-		mmc_adata_object: {help: "AnnData object with MMC cell type labels to integrate."}
+		mmc_adata_object: {help: "AnnData object with MMC cell type labels, and Kamath et al. 2022 DA neuron spike-in cells if provided, to integrate."}
 		scvi_latent_key: {help: "Latent key to save the scVI latent to. ['X_scVI']"}
 		batch_key: {help: "Key in AnnData object for batch information. ['batch_id']"}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}

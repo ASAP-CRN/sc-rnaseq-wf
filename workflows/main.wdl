@@ -13,6 +13,8 @@ workflow sc_rnaseq_analysis {
 		String cohort_id
 		Array[Project] projects
 
+		File? kamath_post_qc_adata_object
+
 		# Preprocess
 		File cellranger_reference_data
 		Float cellbender_fpr = 0.0
@@ -121,6 +123,7 @@ workflow sc_rnaseq_analysis {
 					project_sample_ids = preprocess.project_sample_ids,
 					preprocessed_adata_objects = preprocess.initial_adata_object,
 					preprocessing_output_file_paths = preprocessing_output_file_paths,
+					kamath_post_qc_adata_object = kamath_post_qc_adata_object,
 					n_cells = n_cells,
 					pct_counts_mt_max = pct_counts_mt_max,
 					doublet_score_max = doublet_score_max,
@@ -164,6 +167,7 @@ workflow sc_rnaseq_analysis {
 				project_sample_ids = flatten(preprocess.project_sample_ids),
 				preprocessed_adata_objects = flatten(preprocess.initial_adata_object),
 				preprocessing_output_file_paths = flatten(preprocessing_output_file_paths),
+				kamath_post_qc_adata_object = kamath_post_qc_adata_object,
 				n_cells = n_cells,
 				pct_counts_mt_max = pct_counts_mt_max,
 				doublet_score_max = doublet_score_max,
@@ -242,6 +246,7 @@ workflow sc_rnaseq_analysis {
 		Array[File?] project_hvg_genes_csv = project_cohort_analysis.hvg_genes_csv
 		Array[File?] project_mmc_adata_object = project_cohort_analysis.mmc_adata_object
 		Array[File?] project_mmc_results_parquet = project_cohort_analysis.mmc_results_parquet
+		Array[File?] project_spiked_da_adata_object = project_cohort_analysis.spiked_da_adata_object
 
 		# Clustering outputs
 		Array[File?] project_integrated_adata_object = project_cohort_analysis.integrated_adata_object
@@ -284,6 +289,7 @@ workflow sc_rnaseq_analysis {
 		File? cohort_hvg_genes_csv = cross_team_cohort_analysis.hvg_genes_csv
 		File? cohort_mmc_adata_object = cross_team_cohort_analysis.mmc_adata_object
 		File? cohort_mmc_results_parquet = cross_team_cohort_analysis.mmc_results_parquet
+		File? cohort_spiked_da_adata_object = cross_team_cohort_analysis.spiked_da_adata_object
 
 		# Clustering outputs
 		File? cohort_integrated_adata_object = cross_team_cohort_analysis.integrated_adata_object
@@ -314,6 +320,7 @@ workflow sc_rnaseq_analysis {
 		organism: {help: "Organism; used to select workflow name. Options: 'human' or 'mouse'. If human, 'pmdbs_sc_rnaseq' will be the workflow name (i.e., bucket folder name) and if mouse, 'mouse_sc_rnaseq' will be selected."}
 		cohort_id: {help: "Name of the cohort; used to name output files during cross-team cohort analysis."}
 		projects: {help: "The project ID, set of samples and their associated reads and metadata, output bucket locations, sc data type, and whether or not to run project-level cohort analysis."}
+		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object; its dopaminergic neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels. Human only. If not provided, no cells are spiked in."}
 		cellranger_reference_data: {help: "Cellranger transcriptome reference data; see https://support.10xgenomics.com/single-cell-gene-expression/software/downloads/latest."}
 		cellbender_fpr: {help: "Cellbender false positive rate. [0.0]"}
 		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [1000000]"}
