@@ -386,7 +386,7 @@ task get_workflow_name {
 	}
 
 	runtime {
-		docker: "gcr.io/google.com/cloudsdktool/google-cloud-cli:524.0.0-slim"
+		docker: "gcr.io/google.com/cloudsdktool/google-cloud-cli:584.0.0-slim"
 		cpu: 2
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "4 GB"
