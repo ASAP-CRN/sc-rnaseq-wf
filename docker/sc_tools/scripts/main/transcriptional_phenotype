@@ -27,6 +27,9 @@ from helpers import update_validation_metrics
 # N_PROCESSORS = 8
 # MAX_GB = 48.0
 
+# Siletti (whole human brain, CCN202210140) cluster annotated with the 'DA VGLUT2' neurotransmitter
+SILETTI_DA_CLUSTER = "Splat_395"
+
 
 def read_csv_results(csv_results_path: str | Path) -> tuple[pd.DataFrame, list[str]]:
     """
@@ -125,6 +128,17 @@ def summarize_mmc_results(mmc_results: pd.DataFrame, workflow_name: str, taxonom
             mmc_results["phenotype"] = mmc_results["supercluster_name"]
             mmc_results["rho"] = mmc_results["supercluster_correlation_coefficient"]
             mmc_results["prob"] = mmc_results["supercluster_bootstrapping_probability"]
+
+            # Dopaminergic (DA VGLUT2) neurons are a single cluster within the heterogeneous
+            # "Splatter" supercluster (92 clusters), so they are split out using cluster-level scores
+            dopaminergic = mmc_results["cluster_name"] == SILETTI_DA_CLUSTER
+            mmc_results.loc[dopaminergic, "phenotype"] = "Dopaminergic"
+            mmc_results.loc[dopaminergic, "rho"] = mmc_results.loc[
+                dopaminergic, "cluster_correlation_coefficient"
+            ]
+            mmc_results.loc[dopaminergic, "prob"] = mmc_results.loc[
+                dopaminergic, "cluster_bootstrapping_probability"
+            ]
 
             mmc_results["cell_type"] = mmc_results["phenotype"]
 

@@ -7,9 +7,6 @@ from anndata import AnnData
 import pandas as pd
 import sys
 
-# sys.path.append("/opt/scripts/utility")
-# from helpers import get_validation_metrics
-
 
 def merge_adata(adata_objects_fofn: str, chunk_size: int = 50) -> AnnData:
     sample_files = []
@@ -46,14 +43,20 @@ def merge_adata(adata_objects_fofn: str, chunk_size: int = 50) -> AnnData:
         # Clean up memory
         del adatas
 
-    # We could subset to the top_genes here before concat if we have memory issues (e.g. whole dataset harmonization)
     print("Merging all chunks...")
     final_adata = ad_concat(merged_chunks, merge="same", uns_merge="same", index_unique="_")
 
     return final_adata
 
 
-def gen_qc_plots(adata: AnnData):
+def downsample_adata(adata: AnnData, n_cells: int) -> AnnData:
+    print(f"Downsampling adata to {n_cells} cells...")
+    ds_adata = sc.pp.sample(adata, n=n_cells, rng=42, copy=True)
+
+    return ds_adata
+
+
+def gen_qc_plots(adata: AnnData, plots_dir: str):
     print("Generating QC plots...")
 
     # Fixed parameters
@@ -69,7 +72,7 @@ def gen_qc_plots(adata: AnnData):
     sc.settings.n_jobs = -1
 
     sc.settings.verbosity = 1
-    sc.settings.figdir = "plots/"
+    sc.settings.figdir = f"{plots_dir}/"
     sc.set_figure_params(
         dpi=100, fontsize=10, dpi_save=300, format="png", figsize=(12, 8)
     )  # type: ignore
@@ -80,7 +83,7 @@ def gen_qc_plots(adata: AnnData):
 
 def main(args: argparse.Namespace):
     adata = merge_adata(args.adata_objects_fofn)
-    gen_qc_plots(adata)
+    gen_qc_plots(adata, "plots")
 
     # Export concatenated data
     adata.write_h5ad(filename=args.adata_output, compression="gzip")
@@ -89,14 +92,19 @@ def main(args: argparse.Namespace):
     adata.obs.to_csv(args.output_metadata_file, index=True)
     print(f"Wrote {args.output_metadata_file}")
 
-    # #######  Validation metrics
-    # val_metrics = get_validation_metrics(adata, "concatenation")
-    # # Log the validation metrics
-    # val_metrics.to_csv(args.output_validation_file, index=True)
+    ds_adata = downsample_adata(adata, args.n_cells)
+    gen_qc_plots(ds_adata, "ds_plots")
+
+    # Export downsampled concatenated data
+    ds_adata.write_h5ad(filename=args.ds_adata_output, compression="gzip")
+    print(f"Wrote {args.ds_adata_output}")
+    # Save downsampled metadata
+    ds_adata.obs.to_csv(args.ds_output_metadata_file, index=True)
+    print(f"Wrote {args.ds_output_metadata_file}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Merge AnnData objects and plot QC metrics")
+    parser = argparse.ArgumentParser(description="Merge AnnData objects, downsample, and plot QC metrics")
     parser.add_argument(
         "--adata-objects-fofn",
         type=str,
@@ -104,23 +112,35 @@ if __name__ == "__main__":
         help="Newline-delimited TSV of sample names and paths to the set of input adata objects (file-of-filenames)",
     )
     parser.add_argument(
+        "--n-cells",
+        type=int,
+        required=True,
+        help="Number of cells to keep. Cells are drawn uniformly at random without replacement [1000000]",
+    )
+    parser.add_argument(
         "--adata-output",
         type=str,
         required=True,
-        help="Output file to save AnnData object to",
+        help="Output file to save fully merged AnnData object to",
     )
     parser.add_argument(
         "--output-metadata-file",
         required=True,
         type=str,
-        help="Output file to write metadata to",
+        help="Output file to write fully merged AnnData metadata to",
     )
-    # parser.add_argument(
-    #     "--output-validation-file",
-    #     type=str,
-    #     required=True,
-    #     help="Output file to write validation metrics to",
-    # )
+    parser.add_argument(
+        "--ds-adata-output",
+        type=str,
+        required=True,
+        help="Output file to save downsampled AnnData object to",
+    )
+    parser.add_argument(
+        "--ds-output-metadata-file",
+        required=True,
+        type=str,
+        help="Output file to write downsampled AnnData metadata to",
+    )
 
     args = parser.parse_args()
     main(args)

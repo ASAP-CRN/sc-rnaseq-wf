@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+
+import argparse
+import sys
+import anndata as ad
+import pandas as pd
+import scanpy as sc
+import scipy.sparse as sp
+from anndata import AnnData
+
+sys.path.append("/opt/scripts/utility")
+from helpers import score_cell_cycle
+
+# Kamath et al. 2022 (https://pubmed.ncbi.nlm.nih.gov/35513515/) DA neuron spike-in
+# Input generated in https://github.com/ASAP-CRN/spatial-sc-rnaseq-integration-wf/tree/c74ea2b5ea543b6a9ecf564183b31ef31360abf0/reference_building/da_neurons_identification_analysis
+SPIKE_IN_ID = "kamath"
+SPIKE_IN_BATCH_KEY = "donor_id"
+SPIKE_IN_CELL_TYPE_KEY = "da_subtype"
+
+
+def ensembl_to_symbols(spike_in: AnnData, all_genes: pd.DataFrame) -> AnnData:
+    """
+    Re-index spike-in var_names from Ensembl IDs to the cohort's gene symbols (Cell Ranger gene names)
+    """
+    # all_genes: index = gene symbol (made unique), column 'gene_id' = Ensembl ID
+    symbol_by_ensembl = pd.Series(all_genes.index.astype(str), index=all_genes["gene_id"].astype(str))
+    symbol_by_ensembl = symbol_by_ensembl[~symbol_by_ensembl.index.duplicated(keep="first")]
+    symbols = symbol_by_ensembl.reindex(spike_in.var_names.astype(str))
+    keep = symbols.notna().values
+    print(f"Spike-in genes mapped to cohort genes: {keep.sum()} of {spike_in.n_vars}")
+
+    spike_in = spike_in[:, keep].copy()
+    spike_in.var = pd.DataFrame({"gene_id": spike_in.var_names.astype(str)}, index=pd.Index(symbols[keep].values))
+    return spike_in
+
+
+def prep_da_spike_in(spike_in: AnnData, all_genes: pd.DataFrame, norm_target_sum: int) -> AnnData:
+    """
+    Format Kamath et al. 2022 DA neurons to match the cohort's normalized AnnData object (see prep_metadata and process)
+    """
+    # Keep DA neurons only (cells with a DA subtype label)
+    spike_in = spike_in[spike_in.obs[SPIKE_IN_CELL_TYPE_KEY].notna()].copy()
+    print(f"Spike-in DA neurons: {spike_in.n_obs} cells")
+
+    # Raw counts in X
+    if "counts" in spike_in.layers:
+        spike_in.X = spike_in.layers["counts"].copy()
+    for slot in (spike_in.layers, spike_in.obsm, spike_in.varm, spike_in.obsp):
+        for key in [x for x in slot.keys() if x is not None]:
+            del slot[key]
+    spike_in.X = sp.csr_matrix(spike_in.X)
+
+    spike_in = ensembl_to_symbols(spike_in, all_genes)
+
+    # QC metrics on all genes, as in prep_metadata
+    spike_in.var["mt"] = spike_in.var_names.str.contains(r"^MT-", case=False, regex=True)
+    spike_in.var["rb"] = spike_in.var_names.str.contains(r"^(RPL|RPS|MRPL|MRPS)", case=False, regex=True)
+    sc.pp.calculate_qc_metrics(
+        spike_in,
+        qc_vars=["rb", "mt"],
+        percent_top=None,
+        log1p=False,
+        inplace=True,
+    )
+
+    # Normalize and score cell cycle on all genes, as in process
+    spike_in.layers["counts"] = spike_in.X.copy()
+    sc.pp.normalize_total(spike_in, target_sum=norm_target_sum)
+    sc.pp.log1p(spike_in)
+    score_cell_cycle(spike_in, organism="human")
+
+    # Metadata matching prep_metadata; one batch per donor
+    obs = spike_in.obs
+    # Kamath's original batch labels (kamath_{donor_id}), before "batch" is overwritten below
+    obs["spike_in_batch"] = obs["batch"].astype(str)
+    obs["sample"] = obs[SPIKE_IN_BATCH_KEY].astype(str)
+    obs["batch"] = obs[SPIKE_IN_BATCH_KEY].astype(str)
+    obs["sex"] = obs["sex"].astype(str) if "sex" in obs.columns else "Unknown"
+    obs["brain_region_level_1"] = "Unknown"
+    obs["brain_region_level_2"] = "Unknown"
+    obs["brain_region_level_3"] = "Unknown"
+    obs["team"] = SPIKE_IN_ID
+    obs["dataset"] = SPIKE_IN_ID
+    obs["batch_id"] = f"{SPIKE_IN_ID}_" + obs["batch"]
+
+    # Reference labels used by scANVI
+    obs["cell_type"] = obs[SPIKE_IN_CELL_TYPE_KEY].astype(str)
+    obs["is_spike_in"] = True
+
+    print(f"Spike-in AnnData object: {spike_in.n_obs} cells, {spike_in.n_vars} genes")
+    print(f"Spike-in batches ({spike_in.obs['batch_id'].nunique()}): {sorted(spike_in.obs['batch_id'].unique())}")
+    print(f"Spike-in cell types:\n{spike_in.obs['cell_type'].value_counts().to_string()}")
+    return spike_in
+
+
+def merge_with_cohort(spike_in: AnnData, cohort: AnnData, n_comps: int) -> AnnData:
+    """
+    Merge spike-in cells into the cohort's normalized (HVG-subset) AnnData object with MMC cell type labels
+    and recompute PCA on all cells
+    """
+    # Restrict to the cohort's genes; cohort genes missing from the spike-in are set to 0
+    missing = cohort.var_names.difference(spike_in.var_names)
+    print(f"Cohort genes missing from spike-in (set to 0): {len(missing)} of {cohort.n_vars}")
+    if len(missing) > 0:
+        filler = AnnData(
+            X=sp.csr_matrix((spike_in.n_obs, len(missing)), dtype=spike_in.X.dtype),
+            obs=spike_in.obs[[]],
+            var=pd.DataFrame(index=missing),
+            layers={"counts": sp.csr_matrix((spike_in.n_obs, len(missing)), dtype=spike_in.X.dtype)},
+        )
+        spike_in = ad.concat([spike_in, filler], axis=1, merge="first")
+    spike_in = spike_in[:, cohort.var_names].copy()
+    spike_in.X = sp.csr_matrix(spike_in.X)
+    spike_in.layers["counts"] = sp.csr_matrix(spike_in.layers["counts"])
+
+    cohort.obs["is_spike_in"] = False
+    # Cohort DA neurons mapped by MMC (Siletti) are left unlabeled so scANVI assigns them a spike-in
+    # DA subtype instead of training on the coarse label; MMC's call is kept in obs["phenotype"]
+    cohort_da = cohort.obs["cell_type"].astype(str) == "Dopaminergic"
+    cohort.obs["cell_type"] = cohort.obs["cell_type"].astype(str)
+    cohort.obs.loc[cohort_da, "cell_type"] = "Unknown"
+    print(f"Cohort cells labeled Dopaminergic by MMC set to Unknown: {cohort_da.sum()}")
+    cohort.X = sp.csr_matrix(cohort.X)
+    cohort.layers["counts"] = sp.csr_matrix(cohort.layers["counts"])
+
+    # PCA is recomputed below, so drop cohort embeddings that spike-in cells do not have
+    for key in list(cohort.obsm.keys()):
+        del cohort.obsm[key]
+
+    # Genes are aligned; join="outer" keeps cohort-only (e.g. MMC) and spike-in-only obs columns
+    merged = ad.concat([cohort, spike_in], join="outer", merge="first", uns_merge="first")
+    merged.var = cohort.var.copy()
+
+    # Add PCA of log1p normalized, as in process
+    sc.pp.pca(merged, n_comps=n_comps)
+
+    print(f"Merged AnnData object: {merged.n_obs} cells ({spike_in.n_obs} spike-in), {merged.n_vars} genes")
+    print(f"Cell types:\n{merged.obs['cell_type'].value_counts().to_string()}")
+    return merged
+
+
+def main(args: argparse.Namespace):
+    # Set CPUs to use for parallel computing
+    sc.settings.n_jobs = -1
+
+    spike_in = sc.read_h5ad(args.adata_input)
+    all_genes = pd.read_csv(args.all_genes_csv, index_col=0)
+
+    spike_in = prep_da_spike_in(spike_in, all_genes, args.norm_target_sum)
+
+    cohort = sc.read_h5ad(args.adata_cohort)
+    adata = merge_with_cohort(spike_in, cohort, args.n_comps)
+
+    adata.write_h5ad(
+        filename=args.adata_output,
+        compression="gzip"
+    )
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Format Kamath et al. 2022 DA neurons and spike them into the cohort's AnnData object with MMC cell type labels"
+    )
+    parser.add_argument(
+        "--adata-input",
+        type=str,
+        required=True,
+        help="Kamath et al. 2022 AnnData object with Ensembl IDs as var_names (e.g. kamath_merged_da_all_non_da_13000_postQC.h5ad)",
+    )
+    parser.add_argument(
+        "--adata-cohort",
+        type=str,
+        required=True,
+        help="Cohort's normalized AnnData object with MMC cell type labels to spike DA neurons into",
+    )
+    parser.add_argument(
+        "--all-genes-csv",
+        type=str,
+        required=True,
+        help="Cohort's all_genes.csv from normalize (gene symbols as index, Ensembl IDs in 'gene_id'); used to map spike-in Ensembl IDs to the cohort's gene symbols",
+    )
+    parser.add_argument(
+        "--norm-target-sum",
+        type=int,
+        required=True,
+        help="The total count value that each spike-in cell will be normalized to; must match the cohort [10000]",
+    )
+    parser.add_argument(
+        "--n-comps",
+        type=int,
+        required=True,
+        help="Number of principal components to compute on the merged AnnData object [30]",
+    )
+    parser.add_argument(
+        "--adata-output",
+        type=str,
+        required=True,
+        help="Output file to save the merged AnnData object to",
+    )
+
+    args = parser.parse_args()
+    main(args)

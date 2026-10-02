@@ -13,15 +13,18 @@ workflow sc_rnaseq_analysis {
 		String cohort_id
 		Array[Project] projects
 
+		File? kamath_post_qc_adata_object
+
 		# Preprocess
 		File cellranger_reference_data
 		Float cellbender_fpr = 0.0
 
 		# Filtering parameters
+		Int n_cells = 1000000
 		Int pct_counts_mt_max = 10
 		Float doublet_score_max = 0.2
-		Array[Int] total_counts_limits = [500, 100000]
-		Array[Int] n_genes_by_counts_limits = [300, 10000]
+		Array[Int] total_counts_limits = [500, 150000]
+		Array[Int] n_genes_by_counts_limits = [300, 15000]
 		Float n_mads_lower = 3
 		Float n_mads_upper = 5
 
@@ -121,6 +124,8 @@ workflow sc_rnaseq_analysis {
 					project_sample_ids = preprocess.project_sample_ids,
 					preprocessed_adata_objects = preprocess.initial_adata_object,
 					preprocessing_output_file_paths = preprocessing_output_file_paths,
+					kamath_post_qc_adata_object = kamath_post_qc_adata_object,
+					n_cells = n_cells,
 					pct_counts_mt_max = pct_counts_mt_max,
 					doublet_score_max = doublet_score_max,
 					total_counts_limits = total_counts_limits,
@@ -164,6 +169,8 @@ workflow sc_rnaseq_analysis {
 				project_sample_ids = flatten(preprocess.project_sample_ids),
 				preprocessed_adata_objects = flatten(preprocess.initial_adata_object),
 				preprocessing_output_file_paths = flatten(preprocessing_output_file_paths),
+				kamath_post_qc_adata_object = kamath_post_qc_adata_object,
+				n_cells = n_cells,
 				pct_counts_mt_max = pct_counts_mt_max,
 				doublet_score_max = doublet_score_max,
 				total_counts_limits = total_counts_limits,
@@ -230,6 +237,9 @@ workflow sc_rnaseq_analysis {
 		Array[File?] project_merged_adata_object = project_cohort_analysis.merged_adata_object
 		Array[File?] project_qc_initial_metadata_csv = project_cohort_analysis.qc_initial_metadata_csv
 		Array[Array[File]?] project_qc_plots_png = project_cohort_analysis.qc_plots_png
+		Array[File?] project_merged_downsampled_adata_object = project_cohort_analysis.merged_downsampled_adata_object
+		Array[File?] project_qc_initial_metadata_downsampled_csv = project_cohort_analysis.qc_initial_metadata_downsampled_csv
+		Array[Array[File]?] project_qc_plots_downsampled_png = project_cohort_analysis.qc_plots_downsampled_png
 		Array[File?] project_filtered_adata_object = project_cohort_analysis.filtered_adata_object
 		Array[File?] project_mmc_extended_results_json = project_cohort_analysis.mmc_extended_results_json
 		Array[File?] project_mmc_results_csv = project_cohort_analysis.mmc_results_csv
@@ -239,6 +249,7 @@ workflow sc_rnaseq_analysis {
 		Array[File?] project_hvg_genes_csv = project_cohort_analysis.hvg_genes_csv
 		Array[File?] project_mmc_adata_object = project_cohort_analysis.mmc_adata_object
 		Array[File?] project_mmc_results_parquet = project_cohort_analysis.mmc_results_parquet
+		Array[File?] project_spiked_da_adata_object = project_cohort_analysis.spiked_da_adata_object
 
 		# Clustering outputs
 		Array[File?] project_integrated_adata_object = project_cohort_analysis.integrated_adata_object
@@ -269,6 +280,9 @@ workflow sc_rnaseq_analysis {
 		File? cohort_merged_adata_object = cross_team_cohort_analysis.merged_adata_object
 		File? cohort_qc_initial_metadata_csv = cross_team_cohort_analysis.qc_initial_metadata_csv
 		Array[File]? cohort_qc_plots_png = cross_team_cohort_analysis.qc_plots_png
+		File? cohort_merged_downsampled_adata_object = cross_team_cohort_analysis.merged_downsampled_adata_object
+		File? cohort_qc_initial_metadata_downsampled_csv = cross_team_cohort_analysis.qc_initial_metadata_downsampled_csv
+		Array[File]? cohort_qc_plots_downsampled_png = cross_team_cohort_analysis.qc_plots_downsampled_png
 		File? cohort_filtered_adata_object = cross_team_cohort_analysis.filtered_adata_object
 		File? cohort_mmc_extended_results_json = cross_team_cohort_analysis.mmc_extended_results_json
 		File? cohort_mmc_results_csv = cross_team_cohort_analysis.mmc_results_csv
@@ -278,6 +292,7 @@ workflow sc_rnaseq_analysis {
 		File? cohort_hvg_genes_csv = cross_team_cohort_analysis.hvg_genes_csv
 		File? cohort_mmc_adata_object = cross_team_cohort_analysis.mmc_adata_object
 		File? cohort_mmc_results_parquet = cross_team_cohort_analysis.mmc_results_parquet
+		File? cohort_spiked_da_adata_object = cross_team_cohort_analysis.spiked_da_adata_object
 
 		# Clustering outputs
 		File? cohort_integrated_adata_object = cross_team_cohort_analysis.integrated_adata_object
@@ -308,19 +323,21 @@ workflow sc_rnaseq_analysis {
 		organism: {help: "Organism; used to select workflow name. Options: 'human' or 'mouse'. If human, 'pmdbs_sc_rnaseq' will be the workflow name (i.e., bucket folder name) and if mouse, 'mouse_sc_rnaseq' will be selected."}
 		cohort_id: {help: "Name of the cohort; used to name output files during cross-team cohort analysis."}
 		projects: {help: "The project ID, set of samples and their associated reads and metadata, output bucket locations, sc data type, and whether or not to run project-level cohort analysis."}
+		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object; its dopaminergic neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels. Human only. If not provided, no cells are spiked in."}
 		cellranger_reference_data: {help: "Cellranger transcriptome reference data; see https://support.10xgenomics.com/single-cell-gene-expression/software/downloads/latest."}
 		cellbender_fpr: {help: "Cellbender false positive rate. [0.0]"}
+		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [1000000]"}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
-		total_counts_limits: {help: "Minimum and maximum total UMI (unique molecular identifier) counts per cell. [100, 100000]"}
-		n_genes_by_counts_limits: {help: "Minimum and maximum number of genes detected per cell (genes with at least one count). [100, 10000]"}
+		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000]"}
+		n_genes_by_counts_limits: {help: "Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 15000]"}
 		n_mads_lower: {help: "Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3]"}
 		n_mads_upper: {help: "Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5]"}
 		mmc_taxonomy: {help: "Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEAAD' (human), 'Siletti' (human), or 'ABC' (mouse)."}
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}
 		allen_brain_mmc_marker_genes_json: {help: "A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data."}
 		norm_target_sum: {help: "The total count value that each cell will be normalized to. [10000]"}
-		n_top_genes: {help: "Number of HVG genes to keep. [8000]"}
+		n_top_genes: {help: "Number of HVG genes to keep. [3000]"}
 		n_comps: {help: "Number of principal components to compute. [30]"}
 		scvi_latent_key: {help: "Latent key to save the scVI latent to. ['X_scVI']"}
 		scanvi_latent_key: {help: "Latent key to save the scANVI latent to. ['X_scANVI']"}

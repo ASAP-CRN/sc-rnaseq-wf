@@ -58,23 +58,25 @@ def process_adata(
         inplace=False,
     )
 
-    # # hack to make sure we keep the marker genes
-    # hvgs_full.loc[markers.index, "highly_variable_nbatches"] = (
-    #     hvgs_full["highly_variable_nbatches"].max() + 1.0
-    # )
-    # # Sort genes by how often they selected as hvg within each batch and
-    # # break ties with median rank of residual variance across batches
-    # hvgs_full.sort_values(
-    #     ["highly_variable_nbatches", "highly_variable_rank"],
-    #     ascending=[False, True],
-    #     na_position="last",
-    #     inplace=True,
-    # )
-
     full_features = adata.var.copy()
 
-    hvgs_full = hvgs_full.iloc[: args.n_top_genes].index.to_list()
-    adata = adata[:, adata.var.index.isin(hvgs_full)]
+    # hvgs_full is returned in adata.var_names order (not ranked), so select on the 'highly_variable' flag
+    hvgs = set(hvgs_full.index[hvgs_full["highly_variable"]])
+
+    # Keep Kamath et al. 2022 dopaminergic neuron marker genes even if not among the top HVGs
+    if source == "human":
+        with open("/opt/resources/da_marker_genes_kamath_hm.txt") as f:
+            da_markers = [x.strip() for x in f.readlines() if x.strip()]
+        da_markers_present = [x for x in da_markers if x in adata.var.index]
+        da_markers_added = [x for x in da_markers_present if x not in hvgs]
+        missing = sorted(set(da_markers) - set(da_markers_present))
+        print(f"DA marker genes already in top {args.n_top_genes} HVGs: {len(da_markers_present) - len(da_markers_added)}")
+        print(f"DA marker genes added to HVGs: {len(da_markers_added)} {da_markers_added}")
+        if missing:
+            print(f"[WARNING] DA marker genes not found in AnnData object: {missing}")
+        hvgs.update(da_markers_added)
+
+    adata = adata[:, adata.var.index.isin(hvgs)]
 
     # Add PCA of log1p normalized
     sc.pp.pca(adata, n_comps=args.n_comps)

@@ -27,6 +27,7 @@
 
 - _processing_: [`process`](./main/process)
     - Normalize + feature selection (i.e. identification of highly variable genes)
+        - Human only: the 17 Kamath et al. 2022 dopaminergic neuron marker genes ([`da_marker_genes_kamath_hm.txt`](../resources/da_marker_genes_kamath_hm.txt)) are kept in addition to the top `n_top_genes` HVGs
     - Add PCA (for `harmony` integration)
 
 
@@ -34,7 +35,18 @@
 
 - _cell transcriptional phenotype_: [`transcriptional_phenotype`](./main/transcriptional_phenotype)
     - Assign "cell_type" to high-fidelity mappings (i.e. correlation >0.5 and bootstrap_probability>0.5), all else "unknown" to the high level labels
+    - The taxonomy levels are read from the MMC results header: SEA-AD (class/subclass/supertype) or Siletti (supercluster/cluster/subcluster). For Siletti, "cell_type" is the supercluster, except cluster `Splat_395` (DA VGLUT2 neurons, within the heterogeneous `Splatter` supercluster), which is labeled "Dopaminergic" using cluster-level scores
     - Annotate adata & export full cell types
+
+- _dopaminergic neuron spike-in_: [`prep_da_spike_in`](./main/prep_da_spike_in) (optional; human only; WDL input `kamath_post_qc_adata_object`)
+    - Spikes [Kamath et al. 2022](https://pubmed.ncbi.nlm.nih.gov/35513515/) dopaminergic (DA) neurons into the cohort's MMC-labeled AnnData object so scANVI can learn DA subtype labels (e.g. `SOX6_AGTR1` PD-vulnerable, `CALB1_*` PD-resistant); the SEA-AD taxonomy used by MMC has no DA class
+    - Formats the DA neurons (cells with a `da_subtype` label) to match the cohort: Ensembl IDs mapped to the cohort's gene symbols (`all_genes.csv`), QC metrics, `sample`/`batch` per donor, `batch_id` = `kamath_{donor_id}`, raw counts in `layers['counts']`, log1p normalized `X` and cell cycle scores (as in `process`), `cell_type` = DA subtype, and `is_spike_in = True` (`False` for cohort cells)
+    - Sets cohort cells labeled "Dopaminergic" by MMC (Siletti `Splat_395`) to "Unknown" so scANVI assigns them a Kamath DA subtype; MMC's call is kept in `phenotype` and `cluster_name`
+    - Restricts the spike-in cells to the cohort's HVGs (missing genes set to 0), merges them into the cohort, and recomputes PCA on all cells (used by Harmony and `scib` metrics)
+    - Input: `kamath_merged_da_all_non_da_13000_postQC.h5ad`, generated in [spatial-sc-rnaseq-integration-wf `reference_building/da_neurons_identification_analysis`](https://github.com/ASAP-CRN/spatial-sc-rnaseq-integration-wf/tree/c74ea2b5ea543b6a9ecf564183b31ef31360abf0/reference_building/da_neurons_identification_analysis):
+        1. [`download_kamath_menon_siletti.py`](https://github.com/ASAP-CRN/spatial-sc-rnaseq-integration-wf/blob/c74ea2b5ea543b6a9ecf564183b31ef31360abf0/reference_building/da_neurons_identification_analysis/scripts/download_kamath_menon_siletti.py) downloads the Kamath H5ADs from CELLxGENE
+        2. [`downsample_kamath_menon_siletti_asap.py`](https://github.com/ASAP-CRN/spatial-sc-rnaseq-integration-wf/blob/c74ea2b5ea543b6a9ecf564183b31ef31360abf0/reference_building/da_neurons_identification_analysis/scripts/downsample_kamath_menon_siletti_asap.py) `--kamath-non-da-per-type 13000` keeps all DA neurons, downsamples each non-DA cell type file to 13,000 cells, and applies the same QC filters as this workflow (mt%, per-donor scrublet doublet score, total counts, genes detected); 96,744 cells postQC
+        - Location: `gs://asap-workflow-dev/pmdbs_sc_rnaseq_karen/spatial-sc-rnaseq-integration-wf/reference_building/da_neurons_identification_analysis/reference_data/kamath/intermediate/kamath_merged_da_all_non_da_13000_postQC.h5ad`
 
 - _integration_: [`integrate_scvi`](./main/integrate_scvi)
     - `scVI` integration to remove batch effects (minimize non-biological variability)

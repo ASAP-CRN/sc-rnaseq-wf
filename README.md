@@ -52,12 +52,14 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | String | organism | Organism; used to select `workflow_name`. Options: 'human' or 'mouse'. If human, `pmdbs_sc_rnaseq` will be the workflow name (i.e., bucket folder name) and if mouse, `mouse_sc_rnaseq` will be selected. |
 | String | cohort_id | Name of the cohort; used to name output files during cross-team cohort analysis. |
 | Array[[Project](#project)] | projects | The project ID, set of samples and their associated reads and metadata, output bucket locations, and whether or not to run project-level cohort analysis. |
+| File? | kamath_post_qc_adata_object | Downsampled and QC-filtered Kamath et al. 2022 AnnData object (e.g. `kamath_merged_da_all_non_da_13000_postQC.h5ad`; see [sc_tools scripts README](docker/sc_tools/scripts/README.md)). Its dopaminergic (DA) neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels (e.g. SOX6_AGTR1, CALB1_GEM); human only. If not provided, no cells are spiked in. |
 | File | cellranger_reference_data | Cellranger transcriptome reference data; see https://www.10xgenomics.com/support/software/cell-ranger/downloads/previous-versions. |
 | Float? | cellbender_fpr | Cellbender false positive rate for signal removal. [0.0] |
+| Int? | n_cells | Number of cells to keep. Cells are drawn uniformly at random without replacement. [1000000] |
 | Float? | pct_counts_mt_max | Maximum percentage of mitochondrial gene counts allowed per cell. [10] |
 | Int? | doublet_score_max | Maximum doublet detection score threshold. [0.2] |
-| Array[Int]? | total_counts_limits | Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 100000] |
-| Array[Int]? | n_genes_by_counts_limits | Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 10000] |
+| Array[Int]? | total_counts_limits | Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000] |
+| Array[Int]? | n_genes_by_counts_limits | Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 15000] |
 | Float? | n_mads_lower | Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3] |
 | Float? | n_mads_upper | Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5] |
 | String | mmc_taxonomy | Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEAAD' (human), 'Siletti' (human), or 'ABC' (mouse). |
