@@ -572,11 +572,9 @@ task map_cell_types {
 	String mmc_mapping_mode = if defined(allen_brain_mmc_marker_genes_json) then "mmc_markers_mapping" else "mmc_otf_mapping"
 	String mmc_output_prefix = "~{cohort_id}.~{mmc_mapping_mode}.~{mmc_taxonomy}"
 
-	Int threads = 4
-	Int calc_human_mem_gb = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 50)
-	# Mouse brain mapping requires extra memory due to MMC's FromSpecifiedMarkersRunner's architecture
-	Int calc_mouse_mem_gb = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 50 + (threads * 10))
-	Int mem_gb = if defined(allen_brain_mmc_marker_genes_json) then calc_mouse_mem_gb else calc_human_mem_gb
+	Int threads = 16
+	Int calc_mem_gb = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 8 + 100)
+	Int mem_gb = if calc_mem_gb > 624 then 624 else calc_mem_gb
 	# MMC's find_markers_for_all_taxonomy_pairs writes unthinned marker scratch to the working disk
 	# That scratch scales with the reference taxonomy rather than with the inputs, so it needs a floor of its own
 	Int disk_size = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 250)
@@ -588,7 +586,7 @@ task map_cell_types {
 		mmc \
 			--adata-input ~{filtered_adata_object} \
 			--mmc-precomputed-stats ~{allen_brain_mmc_precomputed_stats_h5} \
-			--n-processors ~{if threads > 4 then 4 else threads} \
+			--n-processors ~{if defined(allen_brain_mmc_marker_genes_json) then 4 else threads} \
 			--output-prefix ~{mmc_output_prefix} \
 			~{if defined(allen_brain_mmc_marker_genes_json) then "--mmc-marker-genes " + allen_brain_mmc_marker_genes_json else ""}
 
@@ -619,7 +617,7 @@ task map_cell_types {
 	}
 
 	meta {
-		description: "Assigns cell type labels using the Allen Brain Cell Atlas MapMyCells (MMC) tool. Uses on-the-fly (SEAAD) mapping for human data or marker-gene-based mapping for mouse data when a marker genes JSON is provided."
+		description: "Assigns cell type labels using the Allen Brain Cell Atlas MapMyCells (MMC) tool. Uses on-the-fly (SEAAD or Siletti) mapping for human data or marker-gene-based mapping for mouse data when a marker genes JSON is provided."
 	}
 
 	parameter_meta {
