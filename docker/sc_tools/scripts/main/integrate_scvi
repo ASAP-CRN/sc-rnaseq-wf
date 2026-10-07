@@ -3,6 +3,7 @@
 import os
 import argparse
 import anndata as ad
+import numpy as np
 import scvi
 
 def integrate_with_scvi(
@@ -29,17 +30,17 @@ def integrate_with_scvi(
     threshold_cells = 3.05e6 # No. of cells in Sep 2025 PMDBS sc cohort (Lee, Hardy, Hafler, Jakobsson, Scherzer)
     if adata.n_obs > threshold_cells:
         plan_kwargs = {"lr": 1e-4}
-        gradient_clip_val = 5.0
         print(f"AnnData object contains {adata.n_obs} which is > {threshold_cells}")
         print(f"--- Using learning rate: {plan_kwargs}")
-        print(f"--- Using gradient clipping: {gradient_clip_val}")
     else:
-        # Defaults
-        plan_kwargs = {"lr": 1e-3} 
-        gradient_clip_val = None
+        # Defaults; small cohorts need the higher learning rate to train within the epoch budget
+        plan_kwargs = {"lr": 1e-3}
         print(f"AnnData object contains {adata.n_obs} which is < {threshold_cells}")
         print(f"--- Using default learning rate: {plan_kwargs}")
-        print(f"--- Using default gradient clipping: {gradient_clip_val}")
+    # scVI can reach unstable weights at any cohort size, and scANVI is initialized from them; clipping
+    # only caps extreme gradient steps, so it doesn't slow training the way a lower learning rate does
+    gradient_clip_val = 5.0
+    print(f"--- Using gradient clipping: {gradient_clip_val}")
 
     # Integrate the data with scVI
     # noise = ["doublet_score", "pct_counts_mt", "pct_counts_rb"]
@@ -77,6 +78,9 @@ def integrate_with_scvi(
     )
 
     adata.obsm[args.latent_key] = model.get_latent_representation()  # type: ignore
+    n_nan_cells = int(np.isnan(adata.obsm[args.latent_key]).any(axis=1).sum())
+    if n_nan_cells > 0:
+        raise ValueError(f"[ERROR] scVI latent contains NaN for {n_nan_cells} cells; training diverged")
 
     return (adata, model)
 

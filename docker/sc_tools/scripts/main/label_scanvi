@@ -3,7 +3,41 @@
 import os
 import argparse
 import anndata as ad
+import numpy as np
 import scvi
+
+
+def check_inputs(adata: ad.AnnData, scvi_latent_key: str = "X_scVI", labels_key: str = "cell_type"):
+    """
+    Fail early on inputs that make scANVI training diverge to NaN
+    """
+    errors = []
+
+    counts = adata.layers["counts"]
+    values = counts.data if hasattr(counts, "data") else np.asarray(counts)
+    n_nonfinite = int((~np.isfinite(values)).sum())
+    n_negative = int((values < 0).sum())
+    print(f"counts layer: {n_nonfinite} non-finite values, {n_negative} negative values")
+    if n_nonfinite > 0:
+        errors.append(f"counts layer contains {n_nonfinite} NaN/inf values")
+    if n_negative > 0:
+        errors.append(f"counts layer contains {n_negative} negative values")
+
+    if scvi_latent_key in adata.obsm:
+        n_nan_cells = int(np.isnan(adata.obsm[scvi_latent_key]).any(axis=1).sum())
+        print(f"{scvi_latent_key}: {n_nan_cells} cells with NaN")
+        if n_nan_cells > 0:
+            errors.append(f"obsm['{scvi_latent_key}'] contains NaN for {n_nan_cells} cells")
+
+    labels = adata.obs[labels_key]
+    n_missing = int(labels.isna().sum() + labels.astype(str).str.lower().isin(["nan", "none", ""]).sum())
+    if n_missing > 0:
+        errors.append(f"obs['{labels_key}'] has {n_missing} missing labels; set them to 'Unknown'")
+    label_counts = labels.astype(str).value_counts()
+    print(f"{labels_key} counts (smallest 10):\n{label_counts.tail(10).to_string()}")
+
+    if errors:
+        raise ValueError("[ERROR] Invalid scANVI inputs:\n- " + "\n- ".join(errors))
 
 
 def label_with_scanvi(
@@ -34,17 +68,17 @@ def label_with_scanvi(
         raise ValueError(f"[ERROR] Source cannot be detected from workflow name: [{workflow_name}]")
     if adata.n_obs > threshold_cells:
         plan_kwargs = {"lr": 1e-4}
-        gradient_clip_val = 5.0
         print(f"AnnData object contains {adata.n_obs} which is > {threshold_cells}")
         print(f"--- Using learning rate: {plan_kwargs}")
-        print(f"--- Using gradient clipping: {gradient_clip_val}")
     else:
-        # Defaults
-        plan_kwargs = {"lr": 1e-3} 
-        gradient_clip_val = None
+        # Defaults; small cohorts need the higher learning rate to train within the epoch budget
+        plan_kwargs = {"lr": 1e-3}
         print(f"AnnData object contains {adata.n_obs} which is < {threshold_cells}")
         print(f"--- Using default learning rate: {plan_kwargs}")
-        print(f"--- Using default gradient clipping: {gradient_clip_val}")
+    # scANVI can diverge to NaN at any cohort size (e.g. many or rare labels); clipping only caps
+    # extreme gradient steps, so it doesn't slow training the way a lower learning rate does
+    gradient_clip_val = 5.0
+    print(f"--- Using gradient clipping: {gradient_clip_val}")
 
     print("Generating scANVI model from scVI")
     scanvi_model = scvi.model.SCANVI.from_scvi_model(
@@ -72,6 +106,9 @@ def label_with_scanvi(
 
     print("Generating scANVI latents and predictions")
     adata.obsm[args.latent_key] = scanvi_model.get_latent_representation(adata)
+    n_nan_cells = int(np.isnan(adata.obsm[args.latent_key]).any(axis=1).sum())
+    if n_nan_cells > 0:
+        raise ValueError(f"[ERROR] scANVI latent contains NaN for {n_nan_cells} cells; training diverged")
     adata.obs[args.predictions_key] = scanvi_model.predict(adata)
 
     return (adata, scanvi_model)
@@ -86,6 +123,7 @@ def main(args: argparse.Namespace):
 
     # 0. Load data
     adata = ad.read_h5ad(args.adata_input)  # type: ignore
+    check_inputs(adata)
     model_path = args.scvi_outputs_dir
     model = scvi.model.SCVI.load(
         dir_path=model_path,
