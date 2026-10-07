@@ -86,7 +86,7 @@ def main(args: argparse.Namespace):
     gen_qc_plots(adata, "plots")
 
     # Export concatenated data
-    adata.write_h5ad(filename=args.adata_output, compression="gzip")
+    adata.write_h5ad(filename=args.adata_output, compression="lzf")
     print(f"Wrote {args.adata_output}")
     # Save metadata
     adata.obs.to_csv(args.output_metadata_file, index=True)
@@ -96,7 +96,7 @@ def main(args: argparse.Namespace):
     gen_qc_plots(ds_adata, "ds_plots")
 
     # Export downsampled concatenated data
-    ds_adata.write_h5ad(filename=args.ds_adata_output, compression="gzip")
+    ds_adata.write_h5ad(filename=args.ds_adata_output, compression="lzf")
     print(f"Wrote {args.ds_adata_output}")
     # Save downsampled metadata
     ds_adata.obs.to_csv(args.ds_output_metadata_file, index=True)

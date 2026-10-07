@@ -241,7 +241,7 @@ def main(args: argparse.Namespace):
     adata = sc.read_h5ad(args.adata_input)
     adata.obs = adata.obs.merge(results, left_index=True, right_index=True)
     # Save the adata
-    adata.write_h5ad(filename=args.adata_output, compression="gzip")
+    adata.write_h5ad(filename=args.adata_output, compression="lzf")
 
 
 if __name__ == "__main__":

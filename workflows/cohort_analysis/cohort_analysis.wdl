@@ -893,9 +893,8 @@ task integrate_harmony {
 		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones
-		gpuType: "nvidia-tesla-t4"
+		gpuType: "nvidia-tesla-v100"
 		gpuCount: 1
-		nvidiaDriverVersion: "545.23.08" #!UnknownRuntimeKey
 	}
 
 	meta {

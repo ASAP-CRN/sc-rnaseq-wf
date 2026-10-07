@@ -133,7 +133,7 @@ def main(args: argparse.Namespace):
     print(f"---- filtered -----")
 
     # 2. Save the filtered adata
-    adata.write_h5ad(filename=args.adata_output, compression="gzip")
+    adata.write_h5ad(filename=args.adata_output, compression="lzf")
     print(f"wrote {args.adata_output}")
 
 

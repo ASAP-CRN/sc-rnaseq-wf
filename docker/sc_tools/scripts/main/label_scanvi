@@ -17,7 +17,6 @@ def label_with_scanvi(
     """
     
     # Fixed parameters
-    scanvi_epochs = 300
     batch_size = 1024
     accelerator = "gpu"
     dispersion = "gene-cell"  # "gene"
@@ -55,15 +54,20 @@ def label_with_scanvi(
         unlabeled_category="Unknown",
     )
 
+    n_cells = adata.n_obs
+    scanvi_epochs = scvi.model.get_max_epochs_heuristic(n_obs=n_cells)
+    scanvi_epochs = max(scanvi_epochs, 10)
+
     print("Training scANVI model")
     scanvi_model.train(
         accelerator=accelerator,
+        batch_size = batch_size,
         max_epochs=scanvi_epochs,
         early_stopping=early_stopping,
         early_stopping_patience=early_stopping_patience,
         datasplitter_kwargs={"num_workers": num_workers},
         gradient_clip_val=gradient_clip_val,
-        plan_kwargs=plan_kwargs,
+        plan_kwargs=plan_kwargs
     )
 
     print("Generating scANVI latents and predictions")
@@ -92,7 +96,7 @@ def main(args: argparse.Namespace):
     # 5. Save the integrated adata and scANVI model
     scanvi_model.save(args.output_scanvi_dir, overwrite=True)
     # 6. Save the latent space
-    adata.write_h5ad(filename=args.adata_output, compression="gzip")
+    adata.write_h5ad(filename=args.adata_output, compression="lzf")
     # 7. Save the cell types to feather
     # adata.obs[[args.predictions_key]].to_feather(args.output_cell_types_file, compression="gzip")
     # 7. Save the cell types to parquet

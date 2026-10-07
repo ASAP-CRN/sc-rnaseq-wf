@@ -70,6 +70,8 @@ def get_artifact_metrics(
 
 def main(args: argparse.Namespace):
     adata = sc.read_h5ad(args.adata_input)  # type: ignore
+    if adata.n_obs > 500_000:
+        adata = sc.pp.sample(adata, n=500_000, rng=42, copy=True)
 
     # Save the results
     report_dir = Path.cwd() / args.output_report_dir

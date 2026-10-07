@@ -101,7 +101,7 @@ def main(args: argparse.Namespace):
     adata, full_features, hvg_features = process_adata(adata, args.workflow_name, args.batch_key)
 
     # 3. Save the filtered adata
-    adata.write_h5ad(filename=args.adata_output, compression="gzip")
+    adata.write_h5ad(filename=args.adata_output, compression="lzf")
 
     full_features.to_csv(args.output_all_genes, index=True)
     hvg_features.to_csv(args.output_hvg_genes, index=True)

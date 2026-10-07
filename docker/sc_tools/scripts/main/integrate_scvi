@@ -17,7 +17,6 @@ def integrate_with_scvi(
     n_latent = 30
     n_layers = 2
     train_size = 0.85
-    scvi_epochs = 300
     batch_size = 1024
     accelerator = "gpu"
     dispersion = "gene-cell"  # "gene"
@@ -61,14 +60,20 @@ def integrate_with_scvi(
         gene_likelihood=gene_likelihood,
     )
 
+    n_cells = adata.n_obs
+    scvi_epochs = scvi.model.get_max_epochs_heuristic(n_obs=n_cells)
+    scvi_epochs = max(scvi_epochs, 20)
+
     model.train(
         train_size=train_size,
+        batch_size = batch_size,
         max_epochs=scvi_epochs,
         early_stopping=early_stopping,
         early_stopping_patience=early_stopping_patience,
         accelerator=accelerator,
         gradient_clip_val=gradient_clip_val,
         plan_kwargs=plan_kwargs,
+        load_sparse_tensor=True
     )
 
     adata.obsm[args.latent_key] = model.get_latent_representation()  # type: ignore
@@ -87,7 +92,7 @@ def main(args: argparse.Namespace):
     adata, model = integrate_with_scvi(adata, args.batch_key)
     # 3. Save the integrated adata and scVI model
     model.save(args.output_scvi_dir, overwrite=True)
-    adata.write_h5ad(filename=args.adata_output, compression="gzip")
+    adata.write_h5ad(filename=args.adata_output, compression="lzf")
 
 
 if __name__ == "__main__":

@@ -2,33 +2,29 @@
 
 import argparse
 import scanpy as sc
+import rapids_singlecell as rsc
 from anndata import AnnData
 
 
 def get_cluster_umap(adata: AnnData, latent_key: str, n_neighbors : int) -> AnnData:
-    # Set CPUs to use for parallel computing
-    sc.settings.n_jobs = -1
-
     # Calculate neighbor graph on scVI latent
-    sc.pp.neighbors(adata, n_neighbors=n_neighbors, use_rep=latent_key)
+    rsc.pp.neighbors(adata, n_neighbors=n_neighbors, use_rep=latent_key, algorithm="cagra")
     # Do Leiden
     for resolution in args.leiden_res:
-        sc.tl.leiden(
+        rsc.tl.leiden(
             adata,
             resolution=resolution,
             key_added=f"leiden_res_{resolution:4.2f}",
-            flavor="igraph",
             n_iterations=2,
-            directed = False,
         )
-    sc.tl.umap(adata)
+    rsc.tl.umap(adata)
     return adata
 
 
 def main(args: argparse.Namespace):
     adata = sc.read_h5ad(args.adata_input)  # type: ignore
     adata = get_cluster_umap(adata, args.latent_key, args.n_neighbors)
-    adata.write_h5ad(filename=args.adata_output, compression="gzip")
+    adata.write_h5ad(filename=args.adata_output, compression="lzf")
 
 
 if __name__ == "__main__":

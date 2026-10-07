@@ -148,9 +148,8 @@ task integrate_sample_data {
 		disks: "local-disk ~{disk_size} SSD"
 		bootDiskSizeGb: 40
 		zones: zones
-		gpuType: "nvidia-tesla-t4"
+		gpuType: "nvidia-tesla-v100"
 		gpuCount: 1
-		nvidiaDriverVersion: "545.23.08" #!UnknownRuntimeKey
 	}
 
 	meta {
@@ -233,9 +232,8 @@ task assign_remaining_cells {
 		disks: "local-disk ~{disk_size} SSD"
 		bootDiskSizeGb: 40
 		zones: zones
-		gpuType: "nvidia-tesla-t4"
+		gpuType: "nvidia-tesla-v100"
 		gpuCount: 1
-		nvidiaDriverVersion: "545.23.08" #!UnknownRuntimeKey
 	}
 
 	meta {
@@ -293,12 +291,12 @@ task cluster_cells {
 	runtime {
 		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: 16
-		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
 		disks: "local-disk ~{disk_size} SSD"
-		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones
+		gpuType: "nvidia-tesla-t4"
+		gpuCount: 1
 	}
 
 	meta {
