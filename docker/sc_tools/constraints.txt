@@ -5,7 +5,7 @@ aiosignal==1.4.0
 anndata==0.12.19
 annotated-types==0.8.0
 anyio==4.15.1
-argschema==3.0.4
+argschema==1.17.5
 array-api-compat==1.15.0
 attrs==26.1.0
 blosc2==4.14.1
@@ -157,7 +157,7 @@ pyyaml==6.0.3
 raft-dask-cu12==26.2.0
 rapids-dask-dependency==26.2.0
 rapids-logger==0.2.3
-rapids-singlecell==0.18.0
+rapids-singlecell-cu12==0.18.0
 rich==15.0.0
 rmm-cu12==26.2.0
 scanpy==1.11.3

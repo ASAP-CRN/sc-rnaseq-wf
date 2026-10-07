@@ -5,7 +5,8 @@ matplotlib==3.10.9
 numpy==2.2.6
 pandas==2.3.3
 pyarrow==25.0.1
-rapids-singlecell[rapids-cu12]==0.18.0
+# CUDA 12 prebuilt wheel; the plain rapids-singlecell package is source-only and needs nvcc to build
+rapids-singlecell-cu12[rapids]==0.18.0
 scanpy==1.11.3
 scib-metrics==0.5.6
 scikit-learn==1.7.2

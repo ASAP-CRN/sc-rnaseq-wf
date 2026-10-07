@@ -62,7 +62,7 @@ RUN update-alternatives --install /usr/bin/python3 python3 /opt/Python-${PYTHON3
 COPY ./requirements.txt /opt/requirements.txt
 COPY ./constraints.txt /opt/constraints.txt
 RUN python3 -m pip install --no-cache-dir --upgrade pip \
-	&& python3 -m pip install --no-cache-dir \
+	&& python3 -m pip install --no-cache-dir --prefer-binary \
 		--extra-index-url https://pypi.nvidia.com \
 		-r /opt/requirements.txt \
 		-c /opt/constraints.txt
