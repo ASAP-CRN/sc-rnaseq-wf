@@ -5,7 +5,7 @@ aiosignal==1.4.0
 anndata==0.12.19
 annotated-types==0.8.0
 anyio==4.15.1
-argschema==1.17.5
+argschema==3.0.4
 array-api-compat==1.15.0
 attrs==26.1.0
 blosc2==4.14.1

@@ -1,4 +1,6 @@
 anndata==0.12.19
+# cell_type_mapper dependency; 2.x+ is source-only on PyPI, and the last wheel (1.17.5) is incompatible with marshmallow 3
+argschema==3.0.4
 h5py==3.16.0
 jax[cuda12]==0.4.35
 matplotlib==3.10.9
