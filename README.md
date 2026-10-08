@@ -7,12 +7,96 @@ Common workflows, tasks, utility scripts, and docker images reused across harmon
 
 # Table of contents
 
+- [User guide](#user-guide)
 - [Workflows](#workflows)
 - [Inputs](#inputs)
 - [Outputs](#outputs)
     - [Output structure](#output-structure)
 - [Docker images](#docker-images)
 
+
+# User guide
+
+## What this analysis is for
+
+This workflow gives a **harmonized first pass** over all ASAP sc/sn RNA-seq samples. It is meant to help you decide **whether a meta-analysis is worth running, and how**. It is not the final analysis of any dataset. Treat the cell type labels in particular as a starting point:
+
+- **Cell types are reference-based and coarse.** Cells are mapped to an Allen Brain Cell Atlas taxonomy with [MapMyCells](https://brain-map.org/bkp/analyze/mapmycells). Only confident calls (correlation and bootstrap probability ≥ 0.5) are kept as `cell_type`; all others are `Unknown`. scANVI then assigns a label to every cell (`C_scANVI`) based on those confident calls.
+- **Labels depend on the reference.** Siletti has a single DA cluster. DA subtypes (e.g. `SOX6_AGTR1`) only appear if the Kamath et al. 2022 spike-in is used. Brain regions or cell types that are rare or missing in the reference will be mislabeled or `Unknown`.
+- **Check before you build on it.** Use the outputs to answer:
+    - Are QC metrics comparable across teams and samples (QC violin plots, `final_metadata.csv`)?
+    - Do cells group by cell type rather than by sample or team after integration (UMAPs, `scib_report.csv`)?
+    - Do MapMyCells (`phenotype`, `cell_type`) and scANVI (`C_scANVI`) agree, and are the expected cell types present in the expected proportions?
+    - Are the cell types you care about present in enough samples and cells to compare groups?
+
+If the answers look good, a meta-analysis across datasets is likely reasonable. If not, consider re-running with different filters, a different reference, or a subset of samples, or analyzing datasets separately.
+
+## Parameters and versions used in a run
+
+Every run records:
+
+- **Workflow version and release:** the `MANIFEST.tsv` in each staging directory lists, for every file, its md5, timestamp, workflow name, workflow version and GitHub release.
+- **Samples:** `${cohort_id}.sample_list.tsv` lists the samples included in the cohort analysis.
+- **Inputs and parameters:** the inputs JSON submitted for the run. Defaults are listed in [Inputs](#inputs).
+- **Tool versions:** fixed by the Docker image tags used by that workflow release; see [Tool and library versions](#tool-and-library-versions).
+
+Default QC filters (applied per cell, after merging):
+
+| Filter | Default |
+| :- | :- |
+| Mitochondrial counts (`pct_counts_mt`) | ≤ 10% |
+| Doublet score (scrublet, per sample) | ≤ 0.2 |
+| Total UMI counts | 500–150,000, and within 3 MADs below / 5 MADs above the per-sample median |
+| Genes detected | 300–15,000, and within 3 MADs below / 5 MADs above the per-sample median |
+| Downsampling (`n_cells`) | None; all cells kept |
+| Cell type confidence (MapMyCells) | correlation ≥ 0.5 and bootstrap probability ≥ 0.5, otherwise `Unknown` |
+
+## Working with the outputs
+
+The main output is `${cohort_id}.final.h5ad`. Useful contents:
+
+| Location | Contents |
+| :- | :- |
+| `layers["counts"]` | Raw (CellBender-corrected) counts |
+| `X` | log1p-normalized counts (target sum 10,000), highly variable genes only (plus Kamath DA marker genes for human) |
+| `obs["cell_type"]`, `obs["phenotype"]`, `obs["rho"]`, `obs["prob"]` | MapMyCells call, before (`phenotype`) and after (`cell_type`) the confidence threshold |
+| `obs["C_scANVI"]` | scANVI cell type for every cell |
+| `obs["leiden_res_*"]` | Leiden clusters at each resolution |
+| `obs["is_spike_in"]` | `True` for Kamath et al. 2022 reference cells (spike-in runs only); remove these before analyzing your cohort |
+| `obsm["X_scVI"]`, `obsm["X_scANVI"]`, `obsm["X_pca_harmony"]`, `obsm["X_umap"]` | Integrated embeddings and UMAP |
+
+AnnData objects are written with LZF compression. They open with `scanpy`/`anndata` (Python) as usual; other readers (e.g. R) need the HDF5 LZF filter plugin.
+
+```python
+import scanpy as sc
+
+adata = sc.read_h5ad("cohort.final.h5ad")
+if "is_spike_in" in adata.obs:
+    adata = adata[~adata.obs["is_spike_in"].astype(bool)].copy()
+
+adata.obs["C_scANVI"].value_counts()
+sc.pl.umap(adata, color=["C_scANVI", "sample"])
+```
+
+### Example notebooks
+
+Example notebooks on the Verily Workbench (VWB) walk through loading the outputs, checking QC and integration, and comparing cell types across datasets:
+
+- https://github.com/ASAP-CRN/asap-crn-learning-lab
+
+## Running your own analysis
+
+If you process the data yourself instead of (or after) using this workflow, consider:
+
+- **Start from the preprocessed merged object.** Cell Ranger and CellBender are the most expensive steps per sample. The merged sample `${cohort_id}.merged_cleaned_unfiltered.h5ad` file in the curated buckets already have ambient RNA removed, doublet scores and QC metrics, so you can skip them.
+- **Keep raw counts.** scVI/scANVI expect raw counts (`layers["counts"]`); normalized values are only for HVG selection, PCA and plotting.
+- **Choose the batch key carefully.** This workflow integrates on `batch_id` (team, dataset and batch). Integrating on a variable confounded with biology (e.g. disease status or brain region) removes real signal.
+- **Pick a reference that matches your tissue.** Check that the cell types you care about exist in the reference taxonomy. Consider adding a targeted reference (as with the Kamath DA spike-in) for rare populations.
+- **Plan for scale.** Memory scales with the number of cells; a cohort of several million cells needs hundreds of GB of RAM for merging and scANVI, and a GPU for scVI/scANVI, clustering and Harmony.
+    - Subsample (e.g. to 500,000 cells) for integration metrics such as `scib-metrics`; computing them on all cells can take days.
+    - Lower the learning rate and use gradient clipping when training scVI/scANVI on very large cohorts to avoid the training diverging to NaN.
+    - GPU libraries such as rapids-singlecell do not support older GPUs (e.g. NVIDIA V100); check compatibility before choosing a machine type.
+- **Downsample to explore.** Set `n_cells` to try parameters on a random subset before running the full cohort.
 
 # Workflows
 
