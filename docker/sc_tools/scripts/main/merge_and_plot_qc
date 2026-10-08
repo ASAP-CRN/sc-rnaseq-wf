@@ -92,7 +92,17 @@ def main(args: argparse.Namespace):
     adata.obs.to_csv(args.output_metadata_file, index=True)
     print(f"Wrote {args.output_metadata_file}")
 
-    ds_adata = downsample_adata(adata, args.n_cells)
+    # Downsampling is optional; by default all cells are kept
+    if args.n_cells is None:
+        print("No --n-cells provided; keeping all cells")
+        return
+    if args.ds_adata_output is None or args.ds_output_metadata_file is None:
+        raise ValueError("[ERROR] --ds-adata-output and --ds-output-metadata-file are required with --n-cells")
+    if args.n_cells >= adata.n_obs:
+        print(f"--n-cells {args.n_cells} >= {adata.n_obs} cells; keeping all cells in the downsampled outputs")
+        ds_adata = adata
+    else:
+        ds_adata = downsample_adata(adata, args.n_cells)
     gen_qc_plots(ds_adata, "ds_plots")
 
     # Export downsampled concatenated data
@@ -104,7 +114,7 @@ def main(args: argparse.Namespace):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Merge AnnData objects, downsample, and plot QC metrics")
+    parser = argparse.ArgumentParser(description="Merge AnnData objects, optionally downsample, and plot QC metrics")
     parser.add_argument(
         "--adata-objects-fofn",
         type=str,
@@ -114,8 +124,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--n-cells",
         type=int,
-        required=True,
-        help="Number of cells to keep. Cells are drawn uniformly at random without replacement [1000000]",
+        required=False,
+        default=None,
+        help="Number of cells to keep. Cells are drawn uniformly at random without replacement for downsampling. Default is to keep all cells",
     )
     parser.add_argument(
         "--adata-output",
@@ -132,14 +143,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--ds-adata-output",
         type=str,
-        required=True,
-        help="Output file to save downsampled AnnData object to",
+        required=False,
+        help="Output file to save downsampled AnnData object to; required with --n-cells",
     )
     parser.add_argument(
         "--ds-output-metadata-file",
-        required=True,
+        required=False,
         type=str,
-        help="Output file to write downsampled AnnData metadata to",
+        help="Output file to write downsampled AnnData metadata to; required with --n-cells",
     )
 
     args = parser.parse_args()

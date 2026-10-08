@@ -19,7 +19,7 @@ workflow cohort_analysis {
 		File? kamath_post_qc_adata_object
 
 		# Filtering parameters
-		Int n_cells
+		Int? n_cells
 		Int pct_counts_mt_max
 		Float doublet_score_max
 		Array[Int] total_counts_limits
@@ -98,10 +98,17 @@ workflow cohort_analysis {
 			zones = zones
 	}
 
+	# Downsampled outputs only exist when n_cells is provided
+	if (defined(n_cells)) {
+		String merged_downsampled_adata_object_path = merge_and_plot_qc_metrics.merged_downsampled_adata_object
+		String qc_initial_metadata_downsampled_csv_path = merge_and_plot_qc_metrics.qc_initial_metadata_downsampled_csv
+		Array[String] qc_plots_downsampled_png_paths = merge_and_plot_qc_metrics.qc_plots_downsampled_png
+	}
+
 	call filter {
 		input:
 			cohort_id = cohort_id,
-			merged_adata_object = merge_and_plot_qc_metrics.merged_adata_object, #!FileCoercion
+			merged_adata_object = select_first([merged_downsampled_adata_object_path, merge_and_plot_qc_metrics.merged_adata_object]), #!FileCoercion
 			pct_counts_mt_max = pct_counts_mt_max,
 			doublet_score_max = doublet_score_max,
 			total_counts_limits = total_counts_limits,
@@ -240,12 +247,14 @@ workflow cohort_analysis {
 		],
 		[
 			merge_and_plot_qc_metrics.merged_adata_object,
-			merge_and_plot_qc_metrics.qc_initial_metadata_csv,
-			merge_and_plot_qc_metrics.merged_downsampled_adata_object,
-			merge_and_plot_qc_metrics.qc_initial_metadata_downsampled_csv
+			merge_and_plot_qc_metrics.qc_initial_metadata_csv
 		],
+		select_all([
+			merged_downsampled_adata_object_path,
+			qc_initial_metadata_downsampled_csv_path
+		]),
 		merge_and_plot_qc_metrics.qc_plots_png,
-		merge_and_plot_qc_metrics.qc_plots_downsampled_png,
+		select_first([qc_plots_downsampled_png_paths, []]),
 		[
 			map_cell_types.mmc_extended_results_json,
 			map_cell_types.mmc_results_csv,
@@ -293,9 +302,9 @@ workflow cohort_analysis {
 		File merged_adata_object = merge_and_plot_qc_metrics.merged_adata_object #!FileCoercion
 		File qc_initial_metadata_csv = merge_and_plot_qc_metrics.qc_initial_metadata_csv #!FileCoercion
 		Array[File] qc_plots_png = merge_and_plot_qc_metrics.qc_plots_png #!FileCoercion
-		File merged_downsampled_adata_object = merge_and_plot_qc_metrics.merged_downsampled_adata_object #!FileCoercion
-		File qc_initial_metadata_downsampled_csv = merge_and_plot_qc_metrics.qc_initial_metadata_downsampled_csv #!FileCoercion
-		Array[File] qc_plots_downsampled_png = merge_and_plot_qc_metrics.qc_plots_downsampled_png #!FileCoercion
+		File? merged_downsampled_adata_object = merged_downsampled_adata_object_path #!FileCoercion
+		File? qc_initial_metadata_downsampled_csv = qc_initial_metadata_downsampled_csv_path #!FileCoercion
+		Array[File]? qc_plots_downsampled_png = qc_plots_downsampled_png_paths #!FileCoercion
 		File filtered_adata_object = filter.filtered_adata_object
 		File mmc_extended_results_json = map_cell_types.mmc_extended_results_json #!FileCoercion
 		File mmc_results_csv = map_cell_types.mmc_results_csv #!FileCoercion
@@ -332,7 +341,7 @@ workflow cohort_analysis {
 	}
 
 	meta {
-		description: "Merges and downsamples preprocessed per-sample AnnData objects and runs QC filtering, Allen Brain MMC cell type mapping, normalization, optional Kamath et al. 2022 DA neuron spike-in, scVI/scANVI integration, Leiden clustering, UMAP visualization, Harmony batch correction, and integration quality metrics for a cohort."
+		description: "Merges and optionally downsamples preprocessed per-sample AnnData objects and runs QC filtering, Allen Brain MMC cell type mapping, normalization, optional Kamath et al. 2022 DA neuron spike-in, scVI/scANVI integration, Leiden clustering, UMAP visualization, Harmony batch correction, and integration quality metrics for a cohort."
 	}
 
 	parameter_meta {
@@ -341,7 +350,7 @@ workflow cohort_analysis {
 		preprocessed_adata_objects: {help: "An array of preprocessed AnnData objects to run cohort analysis on."}
 		preprocessing_output_file_paths: {help: "Selected preprocessed output files to upload to the staging bucket alongside selected cohort analysis output files."}
 		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object (Ensembl IDs as var_names) whose dopaminergic neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels; human only. If not provided, no cells are spiked in."}
-		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [1000000]"}
+		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement for downsampling. Default is to keep all cells."}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
 		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000]"}
@@ -381,7 +390,7 @@ task merge_and_plot_qc_metrics {
 		String cohort_id
 		Array[File] preprocessed_adata_objects
 
-		Int n_cells
+		Int? n_cells
 
 		String raw_data_path
 		Array[Array[String]] workflow_info
@@ -404,19 +413,11 @@ task merge_and_plot_qc_metrics {
 
 		merge_and_plot_qc \
 			--adata-objects-fofn adata_samples_paths.tsv \
-			--n-cells ~{n_cells} \
+			~{"--n-cells " + n_cells} \
 			--adata-output ~{cohort_id}.merged_cleaned_unfiltered.h5ad \
 			--output-metadata-file ~{cohort_id}.initial_metadata.csv \
-			--ds-adata-output ~{cohort_id}.merged_cleaned_unfiltered.downsampled.h5ad \
-			--ds-output-metadata-file ~{cohort_id}.initial_metadata.downsampled.csv
-
-		for dir in plots ds_plots; do
-			suffix=""
-			[ "$dir" = "ds_plots" ] && suffix=".downsampled"
-			for metric in n_genes_by_counts total_counts pct_counts_mt pct_counts_rb doublet_score; do
-				mv "$dir/violin_$metric.png" "$dir/~{cohort_id}.$metric$suffix.violin.png"
-			done
-		done
+			~{if defined(n_cells) then "--ds-adata-output " + cohort_id + ".merged_cleaned_unfiltered.downsampled.h5ad" else ""} \
+			~{if defined(n_cells) then "--ds-output-metadata-file " + cohort_id + ".initial_metadata.downsampled.csv" else ""}
 
 		upload_outputs \
 			-b ~{billing_project} \
@@ -428,14 +429,21 @@ task merge_and_plot_qc_metrics {
 			-o plots/"~{cohort_id}.total_counts.violin.png" \
 			-o plots/"~{cohort_id}.pct_counts_mt.violin.png" \
 			-o plots/"~{cohort_id}.pct_counts_rb.violin.png" \
-			-o plots/"~{cohort_id}.doublet_score.violin.png" \
-			-o "~{cohort_id}.merged_cleaned_unfiltered.downsampled.h5ad" \
-			-o "~{cohort_id}.initial_metadata.downsampled.csv" \
-			-o ds_plots/"~{cohort_id}.n_genes_by_counts.violin.downsampled.png" \
-			-o ds_plots/"~{cohort_id}.total_counts.violin.downsampled.png" \
-			-o ds_plots/"~{cohort_id}.pct_counts_mt.violin.downsampled.png" \
-			-o ds_plots/"~{cohort_id}.pct_counts_rb.violin.downsampled.png" \
-			-o ds_plots/"~{cohort_id}.doublet_score.violin.downsampled.png"
+			-o plots/"~{cohort_id}.doublet_score.violin.png"
+
+		if ~{defined(n_cells)}; then
+			upload_outputs \
+				-b ~{billing_project} \
+				-d ~{raw_data_path} \
+				-i ~{write_tsv(workflow_info)} \
+				-o "~{cohort_id}.merged_cleaned_unfiltered.downsampled.h5ad" \
+				-o "~{cohort_id}.initial_metadata.downsampled.csv" \
+				-o ds_plots/"~{cohort_id}.n_genes_by_counts.violin.downsampled.png" \
+				-o ds_plots/"~{cohort_id}.total_counts.violin.downsampled.png" \
+				-o ds_plots/"~{cohort_id}.pct_counts_mt.violin.downsampled.png" \
+				-o ds_plots/"~{cohort_id}.pct_counts_rb.violin.downsampled.png" \
+				-o ds_plots/"~{cohort_id}.doublet_score.violin.downsampled.png"
+		fi
 	>>>
 
 	output {
@@ -471,12 +479,12 @@ task merge_and_plot_qc_metrics {
 	}
 
 	meta {
-		description: "Merges and downsamples sample-level AnnData objects to a single cohort-level AnnData object and generates pre-filtering QC violin plots for key metrics."
+		description: "Merges and optionally downsamples sample-level AnnData objects to a single cohort-level AnnData object and generates pre-filtering QC violin plots for key metrics."
 	}
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
-		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [1000000]"}
+		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement for downsampling. Default is to keep all cells."}
 		preprocessed_adata_objects: {help: "An array of preprocessed AnnData objects to run cohort analysis on."}
 		raw_data_path: {help: "Raw data bucket path for merged adata and QC plots outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
 		workflow_info: {help: "UTC timestamp, workflow name, workflow version, and GitHub release; stored in the file-level manifest and final manifest with all saved files."}

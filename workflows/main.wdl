@@ -20,7 +20,7 @@ workflow sc_rnaseq_analysis {
 		Float cellbender_fpr = 0.0
 
 		# Filtering parameters
-		Int n_cells = 1000000
+		Int? n_cells
 		Int pct_counts_mt_max = 10
 		Float doublet_score_max = 0.2
 		Array[Int] total_counts_limits = [500, 150000]
@@ -326,7 +326,7 @@ workflow sc_rnaseq_analysis {
 		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object; its dopaminergic neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels. Human only. If not provided, no cells are spiked in."}
 		cellranger_reference_data: {help: "Cellranger transcriptome reference data; see https://support.10xgenomics.com/single-cell-gene-expression/software/downloads/latest."}
 		cellbender_fpr: {help: "Cellbender false positive rate. [0.0]"}
-		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement. [1000000]"}
+		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement for downsampling. Default is to keep all cells."}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
 		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000]"}

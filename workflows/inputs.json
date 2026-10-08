@@ -5,7 +5,7 @@
   "sc_rnaseq_analysis.kamath_post_qc_adata_object": "File? (optional)",
   "sc_rnaseq_analysis.cellranger_reference_data": "File",
   "sc_rnaseq_analysis.cellbender_fpr": "Float (optional, default = 0.0)",
-  "sc_rnaseq_analysis.n_cells": "Int (optional, default = 1000000)",
+  "sc_rnaseq_analysis.n_cells": "Int? (optional)",
   "sc_rnaseq_analysis.pct_counts_mt_max": "Int (optional, default = 10)",
   "sc_rnaseq_analysis.doublet_score_max": "Float (optional, default = 0.2)",
   "sc_rnaseq_analysis.total_counts_limits": "Array[Int] (optional, default = [500, 150000])",
