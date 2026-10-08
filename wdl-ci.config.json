@@ -13,7 +13,7 @@
               "inputs": {
                 "cohort_id": "${cohort_id}",
                 "preprocessed_adata_objects": [
-                  "${input_resources_file_path}/${preprocess_workflow_name}/ASAP_PMBDS_000105_s001_1.cleaned_unfiltered.h5ad",
+                  "${input_resources_file_path}/${preprocess_workflow_name}/~{dataset_sample_id}.cleaned_unfiltered.h5ad",
                   "${input_resources_file_path}/${preprocess_workflow_name}/ASAP_PMBDS_000108_s001_1.cleaned_unfiltered.h5ad",
                   "${input_resources_file_path}/${preprocess_workflow_name}/ASAP_PMBDS_000026_s001_Rep1.cleaned_unfiltered.h5ad",
                   "${input_resources_file_path}/${preprocess_workflow_name}/ASAP_PMBDS_000027_s001_Rep1.cleaned_unfiltered.h5ad",
@@ -520,7 +520,7 @@
               "inputs": {
                 "dataset_sample_id": "${dataset_sample_id}",
                 "sample_id": "${sample_id}",
-                "raw_counts": "${input_resources_file_path}/${preprocess_workflow_name}/${dataset_sample_id}.raw_feature_bc_matrix.h5",
+                "raw_counts": "${input_resources_file_path}/${preprocess_workflow_name}/${dataset_id}.ASAP_PMBDS_000128_s001_rep1.raw_feature_bc_matrix.h5",
                 "cellbender_fpr": "${cellbender_fpr}",
                 "raw_data_path": "${cellbender_raw_data_path}",
                 "workflow_info": "${workflow_info}",
