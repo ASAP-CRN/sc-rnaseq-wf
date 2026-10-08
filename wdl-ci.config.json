@@ -13,7 +13,7 @@
               "inputs": {
                 "cohort_id": "${cohort_id}",
                 "preprocessed_adata_objects": [
-                  "${input_resources_file_path}/${preprocess_workflow_name}/~{dataset_sample_id}.cleaned_unfiltered.h5ad",
+                  "${input_resources_file_path}/${preprocess_workflow_name}/${dataset_sample_id}.cleaned_unfiltered.h5ad",
                   "${input_resources_file_path}/${preprocess_workflow_name}/ASAP_PMBDS_000108_s001_1.cleaned_unfiltered.h5ad",
                   "${input_resources_file_path}/${preprocess_workflow_name}/ASAP_PMBDS_000026_s001_Rep1.cleaned_unfiltered.h5ad",
                   "${input_resources_file_path}/${preprocess_workflow_name}/ASAP_PMBDS_000027_s001_Rep1.cleaned_unfiltered.h5ad",
@@ -808,7 +808,7 @@
       ],
       "workflow_name": "pmdbs_sc_rnaseq",
       "workflow_version": "v4.1.0",
-      "workflow_release": "https://github.com/ASAP-CRN/sc-rnaseq-wf/releases/tag/sc_rnaseq_analysis-~{workflow_version}",
+      "workflow_release": "https://github.com/ASAP-CRN/sc-rnaseq-wf/releases/tag/sc_rnaseq_analysis-${workflow_version}",
       "workflow_info": [
         [
           "${run_timestamp}",
