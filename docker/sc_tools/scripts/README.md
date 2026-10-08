@@ -13,6 +13,7 @@
     - Merges adatas
     - Plot general QC metrics for all cells
     - Save initial metadata
+    - Optionally downsamples to `n_cells` cells (uniformly at random) and saves the downsampled adata, metadata and QC plots; by default all cells are kept
 
 - _filtering_: [`filter`](./main/filter)
     - QC filtering
@@ -21,7 +22,7 @@
 ## _PROCESSING_
 
 - _map my cells_: [`mmc`](./main/mmc)
-    - Leverage Allen Brain Map's [MapMyCells](https://portal.brain-map.org/atlases-and-data/bkp/mapmycells) on SEA-AD taxonomy for Human and 10x whole brain Mouse taxonomy for Mouse
+    - Leverage Allen Brain Map's [MapMyCells](https://portal.brain-map.org/atlases-and-data/bkp/mapmycells) on the 10x whole human brain (Siletti) or SEA-AD taxonomy for Human and the 10x whole mouse brain taxonomy for Mouse
     - This needs to be done BEFORE feature selection so we can leverage as many genes as possible
         - FUTURE: In the future we can map to just a subset of the taxonomy for efficiency (e.g. `nodes_to_drop`, or constructing a simplified reference)
 
@@ -50,11 +51,14 @@
 
 - _integration_: [`integrate_scvi`](./main/integrate_scvi)
     - `scVI` integration to remove batch effects (minimize non-biological variability)
+    - Gradient clipping is always on; cohorts above 3.05M cells use a lower learning rate (1e-4). Fails if the latent space contains NaN
 
-- _assign remaining cells_: [`label_scanvi`](./main/label_scvi)
+- _assign remaining cells_: [`label_scanvi`](./main/label_scanvi)
     - `scANVI` leverage cell-type from MMC to assign the rest of the cells
+    - Checks inputs first (NaN/negative counts, NaN scVI latent, missing labels) and fails if the scANVI latent space contains NaN
 
 - _UMAP clustering_: [`clustering_umap`](./main/clustering_umap)
+    - Neighbors, Leiden and UMAP on the GPU with [rapids-singlecell](https://github.com/scverse/rapids_singlecell)
     - Updated to do leiden at 3 resolutions - [0.2, 0.5, 1.0]
         - FUTURE: We may choose `mde` (`clustering_mde`) over `umap`, as it is super fast and efficient on a GPU, and the embeddings are only useful for visualization so the choice is semi-arbitrary
 
@@ -62,13 +66,13 @@
     - Use cellassign and a list of marker genes. Currently using CARD cortical list of genes. NOTE: this is not annotating the "clusters" but the cells based on marker gene expression.
 
 - _alternate integration_: [`add_harmony`](./main/add_harmony)
-    - Add and Harmony integration obsm
+    - Add Harmony integration obsm (GPU, rapids-singlecell)
     - Save final metadata
 
 - _`SCIB` METRICS_: [`artifact_metrics`](./main/artifact_metrics)
     - Integration metrics
     - Compute `scib` metrics on final artifacts and generate a report to assess quality of batch correction vs. preservation of biological variability
-    - TODO: make sure this works correctly. Current jax implementation fails.
+    - Cohorts with more than 500,000 cells are randomly subsampled to 500,000 cells to keep runtime manageable
 
 
 ## _PLOTTING_
