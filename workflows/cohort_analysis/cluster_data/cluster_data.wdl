@@ -111,6 +111,7 @@ task integrate_sample_data {
 	}
 
 	Int mem_gb = ceil(size(mmc_adata_object, "GB") * 5 + 20)
+	String gpu_type = if mem_gb > 78 then "nvidia-tesla-t4" else "nvidia-tesla-v100"
 	Int disk_size = ceil(size(mmc_adata_object, "GB") * 3 + 50)
 
 	command <<<
@@ -143,12 +144,12 @@ task integrate_sample_data {
 
 	runtime {
 		docker: "~{container_registry}/sc_tools:1.3.0"
-		cpu: 4
+		cpu: 8
 		memory: "~{mem_gb} GB"
 		disks: "local-disk ~{disk_size} SSD"
 		bootDiskSizeGb: 40
 		zones: zones
-		gpuType: "nvidia-tesla-v100"
+		gpuType: gpu_type
 		gpuCount: 1
 	}
 
@@ -187,6 +188,7 @@ task assign_remaining_cells {
 	}
 
 	Int mem_gb = ceil(size(integrated_adata_object, "GB") * 12 + 30)
+	String gpu_type = if mem_gb > 78 then "nvidia-tesla-t4" else "nvidia-tesla-v100"
 	Int disk_size = ceil(size(integrated_adata_object, "GB") * 3 + 50)
 
 	command <<<
@@ -227,12 +229,12 @@ task assign_remaining_cells {
 
 	runtime {
 		docker: "~{container_registry}/sc_tools:1.3.0"
-		cpu: 16
+		cpu: 8
 		memory: "~{mem_gb} GB"
 		disks: "local-disk ~{disk_size} SSD"
 		bootDiskSizeGb: 40
 		zones: zones
-		gpuType: "nvidia-tesla-v100"
+		gpuType: gpu_type
 		gpuCount: 1
 	}
 
