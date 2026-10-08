@@ -419,6 +419,12 @@ task merge_and_plot_qc_metrics {
 			~{if defined(n_cells) then "--ds-adata-output " + cohort_id + ".merged_cleaned_unfiltered.downsampled.h5ad" else ""} \
 			~{if defined(n_cells) then "--ds-output-metadata-file " + cohort_id + ".initial_metadata.downsampled.csv" else ""}
 
+		mv "plots/violin_n_genes_by_counts.png" "plots/~{cohort_id}.n_genes_by_counts.violin.png"
+		mv "plots/violin_total_counts.png" "plots/~{cohort_id}.total_counts.violin.png"
+		mv "plots/violin_pct_counts_mt.png" "plots/~{cohort_id}.pct_counts_mt.violin.png"
+		mv "plots/violin_pct_counts_rb.png" "plots/~{cohort_id}.pct_counts_rb.violin.png"
+		mv "plots/violin_doublet_score.png" "plots/~{cohort_id}.doublet_score.violin.png"
+
 		upload_outputs \
 			-b ~{billing_project} \
 			-d ~{raw_data_path} \
@@ -432,6 +438,12 @@ task merge_and_plot_qc_metrics {
 			-o plots/"~{cohort_id}.doublet_score.violin.png"
 
 		if ~{defined(n_cells)}; then
+			mv "ds_plots/violin_n_genes_by_counts.png" "ds_plots/~{cohort_id}.n_genes_by_counts.violin.downsampled.png"
+			mv "ds_plots/violin_total_counts.png" "ds_plots/~{cohort_id}.total_counts.violin.downsampled.png"
+			mv "ds_plots/violin_pct_counts_mt.png" "ds_plots/~{cohort_id}.pct_counts_mt.violin.downsampled.png"
+			mv "ds_plots/violin_pct_counts_rb.png" "ds_plots/~{cohort_id}.pct_counts_rb.violin.downsampled.png"
+			mv "ds_plots/violin_doublet_score.png" "ds_plots/~{cohort_id}.doublet_score.violin.downsampled.png"
+
 			upload_outputs \
 				-b ~{billing_project} \
 				-d ~{raw_data_path} \

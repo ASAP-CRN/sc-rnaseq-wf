@@ -514,7 +514,7 @@
         },
         "remove_technical_artifacts": {
           "key": "remove_technical_artifacts",
-          "digest": "sjenotp3l2ipbqmlts5hdnwxi62a2y6a",
+          "digest": "b5ywyxckliwdtrgi6dm2z7fwng2gi2hr",
           "tests": [
             {
               "inputs": {
