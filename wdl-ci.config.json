@@ -7,7 +7,7 @@
       "tasks": {
         "merge_and_plot_qc_metrics": {
           "key": "merge_and_plot_qc_metrics",
-          "digest": "obj3n2ma5ysztjqwt6psikyg4ewpdxs4",
+          "digest": "m3mwanao3tka36vedngx5qu5ixapjnjc",
           "tests": [
             {
               "inputs": {
@@ -65,7 +65,7 @@
         },
         "filter": {
           "key": "filter",
-          "digest": "idnviqxvuxxx3m7fcndgxvjvf5ytv3za",
+          "digest": "twm7kzcx32o2fgdg5aclstqzbdymve7n",
           "tests": [
             {
               "inputs": {
@@ -137,7 +137,7 @@
         },
         "normalize": {
           "key": "normalize",
-          "digest": "ufvo3yomdzynzkp4up5extt2ybz3lbsk",
+          "digest": "lt4ujy5xndxhkqdlkeqqir5gj7qb6knp",
           "tests": [
             {
               "inputs": {
@@ -186,7 +186,7 @@
         },
         "add_mapped_cell_types": {
           "key": "add_mapped_cell_types",
-          "digest": "z7mwxa4cwpvljendbwdqoyq5ofzwgdaa",
+          "digest": "z7iygakoqamk2kyqzivxym4jt6h6wp66",
           "tests": [
             {
               "inputs": {
@@ -221,7 +221,7 @@
         },
         "integrate_harmony": {
           "key": "integrate_harmony",
-          "digest": "ic6gtvu7cwqpx24d5d5i4kuslpitl3bi",
+          "digest": "7otynl4gmczarltanedljl3dacj3ebi3",
           "tests": [
             {
               "inputs": {
