@@ -411,6 +411,7 @@ task merge_and_plot_qc_metrics {
 			echo -e "${sample}\t${adata_path}" >> adata_samples_paths.tsv
 		done < ~{write_lines(preprocessed_adata_objects)}
 
+		/usr/bin/time \
 		merge_and_plot_qc \
 			--adata-objects-fofn adata_samples_paths.tsv \
 			~{"--n-cells " + n_cells} \
@@ -529,6 +530,7 @@ task filter {
 	command <<<
 		set -euo pipefail
 
+		/usr/bin/time \
 		filter \
 			--adata-input ~{merged_adata_object} \
 			--pct-counts-mt-max ~{pct_counts_mt_max} \
@@ -681,6 +683,7 @@ task normalize {
 	command <<<
 		set -euo pipefail
 
+		/usr/bin/time \
 		process \
 			--adata-input ~{filtered_adata_object} \
 			--workflow-name ~{workflow_name} \
@@ -757,6 +760,7 @@ task add_mapped_cell_types {
 	command <<<
 		set -euo pipefail
 
+		/usr/bin/time \
 		transcriptional_phenotype \
 			--adata-input ~{normalized_adata_object} \
 			--workflow-name ~{workflow_name} \
@@ -824,6 +828,7 @@ task spike_in_da {
 	command <<<
 		set -euo pipefail
 
+		/usr/bin/time \
 		prep_da_spike_in \
 			--adata-input ~{kamath_post_qc_adata_object} \
 			--adata-cohort ~{mmc_adata_object} \
@@ -886,6 +891,7 @@ task integrate_harmony {
 
 		nvidia-smi
 
+		/usr/bin/time \
 		add_harmony \
 			--batch-key ~{batch_key} \
 			--adata-input ~{umap_clustered_adata_object} \
