@@ -7,12 +7,96 @@ Common workflows, tasks, utility scripts, and docker images reused across harmon
 
 # Table of contents
 
+- [User guide](#user-guide)
 - [Workflows](#workflows)
 - [Inputs](#inputs)
 - [Outputs](#outputs)
     - [Output structure](#output-structure)
 - [Docker images](#docker-images)
 
+
+# User guide
+
+## What this analysis is for
+
+This workflow gives a **harmonized first pass** over all ASAP sc/sn RNA-seq samples. It is meant to help you decide **whether a meta-analysis is worth running, and how**. It is not the final analysis of any dataset. Treat the cell type labels in particular as a starting point:
+
+- **Cell types are reference-based and coarse.** Cells are mapped to an Allen Brain Cell Atlas taxonomy with [MapMyCells](https://brain-map.org/bkp/analyze/mapmycells). Only confident calls (correlation and bootstrap probability ≥ 0.5) are kept as `cell_type`; all others are `Unknown`. scANVI then assigns a label to every cell (`C_scANVI`) based on those confident calls.
+- **Labels depend on the reference.** Siletti has a single DA cluster. DA subtypes (e.g. `SOX6_AGTR1`) only appear if the Kamath et al. 2022 spike-in is used. Brain regions or cell types that are rare or missing in the reference will be mislabeled or `Unknown`.
+- **Check before you build on it.** Use the outputs to answer:
+    - Are QC metrics comparable across teams and samples (QC violin plots, `final_metadata.csv`)?
+    - Do cells group by cell type rather than by sample or team after integration (UMAPs, `scib_report.csv`)?
+    - Do MapMyCells (`phenotype`, `cell_type`) and scANVI (`C_scANVI`) agree, and are the expected cell types present in the expected proportions?
+    - Are the cell types you care about present in enough samples and cells to compare groups?
+
+If the answers look good, a meta-analysis across datasets is likely reasonable. If not, consider re-running with different filters, a different reference, or a subset of samples, or analyzing datasets separately.
+
+## Parameters and versions used in a run
+
+Every run records:
+
+- **Workflow version and release:** the `MANIFEST.tsv` in each staging directory lists, for every file, its md5, timestamp, workflow name, workflow version and GitHub release.
+- **Samples:** `${cohort_id}.sample_list.tsv` lists the samples included in the cohort analysis.
+- **Inputs and parameters:** the inputs JSON submitted for the run. Defaults are listed in [Inputs](#inputs).
+- **Tool versions:** fixed by the Docker image tags used by that workflow release; see [Tool and library versions](#tool-and-library-versions).
+
+Default QC filters (applied per cell, after merging):
+
+| Filter | Default |
+| :- | :- |
+| Mitochondrial counts (`pct_counts_mt`) | ≤ 10% |
+| Doublet score (scrublet, per sample) | ≤ 0.2 |
+| Total UMI counts | 500–150,000, and within 3 MADs below / 5 MADs above the per-sample median |
+| Genes detected | 300–15,000, and within 3 MADs below / 5 MADs above the per-sample median |
+| Downsampling (`n_cells`) | None; all cells kept |
+| Cell type confidence (MapMyCells) | correlation ≥ 0.5 and bootstrap probability ≥ 0.5, otherwise `Unknown` |
+
+## Working with the outputs
+
+The main output is `${cohort_id}.final.h5ad`. Useful contents:
+
+| Location | Contents |
+| :- | :- |
+| `layers["counts"]` | Raw (CellBender-corrected) counts |
+| `X` | log1p-normalized counts (target sum 10,000), highly variable genes only (plus Kamath DA marker genes for human) |
+| `obs["cell_type"]`, `obs["phenotype"]`, `obs["rho"]`, `obs["prob"]` | MapMyCells call, before (`phenotype`) and after (`cell_type`) the confidence threshold |
+| `obs["C_scANVI"]` | scANVI cell type for every cell |
+| `obs["leiden_res_*"]` | Leiden clusters at each resolution |
+| `obs["is_spike_in"]` | `True` for Kamath et al. 2022 reference cells (spike-in runs only); remove these before analyzing your cohort |
+| `obsm["X_scVI"]`, `obsm["X_scANVI"]`, `obsm["X_pca_harmony"]`, `obsm["X_umap"]` | Integrated embeddings and UMAP |
+
+AnnData objects are written with LZF compression. They open with `scanpy`/`anndata` (Python) as usual; other readers (e.g. R) need the HDF5 LZF filter plugin.
+
+```python
+import scanpy as sc
+
+adata = sc.read_h5ad("cohort.final.h5ad")
+if "is_spike_in" in adata.obs:
+    adata = adata[~adata.obs["is_spike_in"].astype(bool)].copy()
+
+adata.obs["C_scANVI"].value_counts()
+sc.pl.umap(adata, color=["C_scANVI", "sample"])
+```
+
+### Example notebooks
+
+Example notebooks on the Verily Workbench (VWB) walk through loading the outputs, checking QC and integration, and comparing cell types across datasets:
+
+- https://github.com/ASAP-CRN/asap-crn-learning-lab
+
+## Running your own analysis
+
+If you process the data yourself instead of (or after) using this workflow, consider:
+
+- **Start from the preprocessed merged object.** Cell Ranger and CellBender are the most expensive steps per sample. The merged sample `${cohort_id}.merged_cleaned_unfiltered.h5ad` file in the curated buckets already have ambient RNA removed, doublet scores and QC metrics, so you can skip them.
+- **Keep raw counts.** scVI/scANVI expect raw counts (`layers["counts"]`); normalized values are only for HVG selection, PCA and plotting.
+- **Choose the batch key carefully.** This workflow integrates on `batch_id` (team, dataset and batch). Integrating on a variable confounded with biology (e.g. disease status or brain region) removes real signal.
+- **Pick a reference that matches your tissue.** Check that the cell types you care about exist in the reference taxonomy. Consider adding a targeted reference (as with the Kamath DA spike-in) for rare populations.
+- **Plan for scale.** Memory scales with the number of cells; a cohort of several million cells needs hundreds of GB of RAM for merging and scANVI, and a GPU for scVI/scANVI, clustering and Harmony.
+    - Subsample (e.g. to 500,000 cells) for integration metrics such as `scib-metrics`; computing them on all cells can take days.
+    - Lower the learning rate and use gradient clipping when training scVI/scANVI on very large cohorts to avoid the training diverging to NaN.
+    - GPU libraries such as rapids-singlecell do not support older GPUs (e.g. NVIDIA V100); check compatibility before choosing a machine type.
+- **Downsample to explore.** Set `n_cells` to try parameters on a random subset before running the full cohort.
 
 # Workflows
 
@@ -52,13 +136,18 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | String | organism | Organism; used to select `workflow_name`. Options: 'human' or 'mouse'. If human, `pmdbs_sc_rnaseq` will be the workflow name (i.e., bucket folder name) and if mouse, `mouse_sc_rnaseq` will be selected. |
 | String | cohort_id | Name of the cohort; used to name output files during cross-team cohort analysis. |
 | Array[[Project](#project)] | projects | The project ID, set of samples and their associated reads and metadata, output bucket locations, and whether or not to run project-level cohort analysis. |
+| File? | kamath_post_qc_adata_object | Downsampled and QC-filtered Kamath et al. 2022 AnnData object (e.g. `kamath_merged_da_all_non_da_13000_postQC.h5ad`; see [sc_tools scripts README](docker/sc_tools/scripts/README.md)). Its dopaminergic (DA) neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels (e.g. SOX6_AGTR1, CALB1_GEM); human only. If not provided, no cells are spiked in. |
 | File | cellranger_reference_data | Cellranger transcriptome reference data; see https://www.10xgenomics.com/support/software/cell-ranger/downloads/previous-versions. |
 | Float? | cellbender_fpr | Cellbender false positive rate for signal removal. [0.0] |
+| Int? | n_cells | Number of cells to keep. Cells are drawn uniformly at random without replacement for downsampling. Default is to keep all cells. |
 | Float? | pct_counts_mt_max | Maximum percentage of mitochondrial gene counts allowed per cell. [10] |
 | Int? | doublet_score_max | Maximum doublet detection score threshold. [0.2] |
-| Array[Int]? | total_counts_limits | Minimum and maximum total UMI (unique molecular identifier) counts per cell. [100, 100000] |
-| Array[Int]? | n_genes_by_counts_limits | Minimum and maximum number of genes detected per cell (genes with at least one count). [100, 10000] |
-| File? | allen_brain_mmc_precomputed_stats_h5 | A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy).  |
+| Array[Int]? | total_counts_limits | Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000] |
+| Array[Int]? | n_genes_by_counts_limits | Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 15000] |
+| Float? | n_mads_lower | Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3] |
+| Float? | n_mads_upper | Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5] |
+| String | mmc_taxonomy | Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEAAD' (human), 'Siletti' (human), or 'ABC' (mouse). |
+| File? | allen_brain_mmc_precomputed_stats_h5 | A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy). |
 | File? | allen_brain_mmc_marker_genes_json | A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data. |
 | Int? | norm_target_sum | The total count value that each cell will be normalized to. [10000] |
 | Int? | n_top_genes | Number of HVG genes to keep. [3000] |
@@ -68,8 +157,8 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | String? | scanvi_predictions_key | scANVI cell type predictions column name. ['C_scANVI'] |
 | String? | batch_key | Key in AnnData object for batch information. ['batch_id'] |
 | Int? | n_neighbors | The size of local neighborhood (in terms of number of neighboring data points) used for manifold approximation. [15] |
-| Array[Float]? | leiden_res | Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.05, 0.1, 0.2, 0.4] |
-| Array[String]? | groups | Groups to produce umap plots for. ['sample', 'batch', 'cell_type', 'leiden_res_0.05', 'leiden_res_0.10', 'leiden_res_0.20', 'leiden_res_0.40'] |
+| Array[Float]? | leiden_res | Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.2, 0.5, 1.0] |
+| Array[String]? | groups | Groups to produce umap plots for. ['sample', 'batch', 'cell_type', 'leiden_res_0.20', 'leiden_res_0.50', 'leiden_res_1.0'] |
 | Array[String]? | features | Features to produce umap plots for. ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_rb', 'doublet_score', 'S_score', 'G2M_score'] |
 | Boolean? | run_cross_team_cohort_analysis | Whether to run downstream harmonization steps on all samples across projects. If set to false, only preprocessing steps (cellranger and generating the initial adata object(s)) will run for samples. [false] |
 | String | cohort_raw_data_bucket | Bucket to upload cross-team cohort intermediate files to. |
@@ -99,6 +188,9 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | String | sample_id | ASAP-generated unique identifier combined with the replicate for the sample within the project. |
 | String? | batch | The sample's batch. If unset, the analysis will stop after running `cellranger_count`. |
 | String? | sex | The sample's sex. |
+| String? | brain_region_level_1 | Abbreviation of most granular anatomical region (Level 1). |
+| String? | brain_region_level_2 | Abbreviation of intermediate level anatomical region (Level 2). |
+| String? | brain_region_level_3 | Abbreviation of coarse level anatomical region (Level 3). |
 | File | fastq_R1 | Path to the sample's read 1 FASTQ file. |
 | File | fastq_R2 | Path to the sample's read 2 FASTQ file. |
 | File? | fastq_I1 | Optional fastq index 1. |
@@ -114,6 +206,9 @@ The inputs JSON may be generated manually, however when running a large number o
     - `ASAP_sample_id`: A generated unique identifier for the sample within the project.
     - `batch`: The sample's batch.
     - `sex`: The sample's sex.
+    - `brain_region_level_1`: Abbreviation of most granular anatomical region (Level 1).
+    - `brain_region_level_2`: Abbreviation of intermediate level anatomical region (Level 2).
+    - `brain_region_level_3`: Abbreviation of coarse level anatomical region (Level 3).
     - `fastq_R1s`: The gs uri to read 1 of sample FASTQ.
         - This is appended to the `project-tsv` from the `fastq-locs-txt`: FASTQ locations for all samples provided in the `project-tsv`. Each sample is expected to have one set of paired fastqs located at `${fastq_path}/${sample_id}*`. The read 1 file should include 'R1' somewhere in the filename. Generate this file e.g. by running `gcloud storage ls gs://fastq_bucket/some/path/**.fastq.gz >> fastq_locs.txt`.
     - `fastq_R2s`: The gs uri to read 2 of sample FASTQ.
@@ -361,7 +456,7 @@ Docker images can be build using the [`build_docker_images`](https://github.com/
 | :- | :- | :- |
 | cellbender | <ul><li>[cellbender v0.3.0](https://github.com/broadinstitute/CellBender/releases/tag/v0.3.0)</li><li>[google-cloud-cli 397.0.0](https://cloud.google.com/sdk/docs/release-notes#39700_2022-08-09)</li><li>[python 3.7.16](https://www.python.org/downloads/release/python-3716/)</li><li>[miniconda 23.1.0](https://docs.anaconda.com/miniconda/miniconda-release-notes/)</li><li>[cuda 11.4.0](https://developer.nvidia.com/cuda-11-4-0-download-archive)</li></ul> | [Dockerfile](https://github.com/ASAP-CRN/sc-rnaseq-wf/tree/main/docker/cellbender) |
 | cellranger | <ul><li>[cellranger v10.1.0](https://www.10xgenomics.com/support/software/cell-ranger/latest/release-notes/cr-release-notes#v10-1-0)</li><li>[google-cloud-cli 524.0.0](https://cloud.google.com/sdk/docs/release-notes#52400_2025-05-28)</li></ul> | [Dockerfile](https://github.com/ASAP-CRN/sc-rnaseq-wf/tree/main/docker/cellranger) |
-| sc_tools | <ul><li>[google-cloud-cli 524.0.0](https://cloud.google.com/sdk/docs/release-notes#52400_2025-05-28)</li><li>[python 3.10.12](https://www.python.org/downloads/release/python-31012/)</li><li>[torch 2.6.0](https://github.com/pytorch/pytorch/releases/tag/v2.6.0)</li></ul> Python libraries: <ul><li>[scvi-tools 1.3.2](https://github.com/scverse/scvi-tools/releases/tag/1.3.2)</li><li>argparse 1.4.0</li><li>[scanpy 1.11.3](https://scanpy.readthedocs.io/en/stable/release-notes/index.html#v1-11-3)</li><li>muon 0.1.7</li><li>tables 3.10.1</li><li>scrublet 0.2.3</li><li>[scikit-learn 1.7.0](https://github.com/scikit-learn/scikit-learn/releases/tag/1.7.0)</li><li>[harmonypy 0.0.10](https://github.com/slowkow/harmonypy/releases/tag/v0.0.10)</li><li>[scib-metrics 0.5.6](https://github.com/YosefLab/scib-metrics/releases/tag/v0.5.6)</li><li>[cell_type_mapper 1.5.3](https://github.com/AllenInstitute/cell_type_mapper/releases/tag/v1.5.3)</li></ul>| [Dockerfile](https://github.com/ASAP-CRN/sc-rnaseq-wf/tree/main/docker/sc_tools) |
+| sc_tools | <ul><li>[google-cloud-cli 524.0.0](https://cloud.google.com/sdk/docs/release-notes#52400_2025-05-28)</li><li>[python 3.12.15](https://www.python.org/downloads/release/python-31215/)</li><li>[cuda 12.3.0](https://developer.nvidia.com/cuda-12-3-0-download-archive)</li><li>[torch 2.6.0](https://github.com/pytorch/pytorch/releases/tag/v2.6.0)</li></ul> Python libraries: <ul><li>[scvi-tools 1.3.2](https://github.com/scverse/scvi-tools/releases/tag/1.3.2)</li><li>[scanpy 1.11.3](https://scanpy.readthedocs.io/en/stable/release-notes/index.html#v1-11-3)</li><li>[anndata 0.12.19](https://anndata.readthedocs.io/en/stable/release-notes/index.html)</li><li>[rapids-singlecell 0.18.0](https://github.com/scverse/rapids_singlecell/releases/tag/v0.18.0)</li><li>[jax 0.4.35](https://github.com/jax-ml/jax/releases/tag/jax-v0.4.35)</li><li>[scikit-learn 1.7.2](https://github.com/scikit-learn/scikit-learn/releases/tag/1.7.2)</li><li>[scib-metrics 0.5.6](https://github.com/YosefLab/scib-metrics/releases/tag/v0.5.6)</li><li>[cell_type_mapper 1.5.3](https://github.com/AllenInstitute/cell_type_mapper/releases/tag/v1.5.3)</li><li>tables 3.11.1</li></ul> Full pinned versions: [requirements.txt](docker/sc_tools/requirements.txt), [constraints.txt](docker/sc_tools/constraints.txt) | [Dockerfile](https://github.com/ASAP-CRN/sc-rnaseq-wf/tree/main/docker/sc_tools) |
 | util | <ul><li>[google-cloud-cli 524.0.0](https://cloud.google.com/sdk/docs/release-notes#52400_2025-05-28)</li></ul> | [Dockerfile](https://github.com/ASAP-CRN/wf-common/tree/main/docker/util) |
 | DEPRECATED - multiome | <ul><li>[google-cloud-cli 444.0.0](https://cloud.google.com/sdk/docs/release-notes#44400_2023-08-22)</li><li>[multiome seuratv4 environment](https://github.com/shahrozeabbas/Multiome-SeuratV4/tree/main)</li><li>[R scripts](https://github.com/shahrozeabbas/Harmony-RNA-Workflow/tree/main/scripts)</li></ul> | [Dockerfile](https://github.com/ASAP-CRN/sc-rnaseq-wf/tree/main/docker/multiome) |
 
@@ -389,7 +484,7 @@ In general, `wdl-ci` will use inputs provided in the [wdl-ci.config.json](./wdl-
 
 | Taxonomy | Description | Link |
 | :- | :- | :- |
-| 10x Human MTG SEA-AD taxonomy (CCN20230505) | A high-resolution transcriptomic atlas of cell types from middle temporal gyrus from the SEA-AD aged human cohort that spans the spectrum of Alzheimer’s disease. Source file used is `precomputed_stats.20231120.sea_ad.MTG.h5`. | https://allen-brain-cell-atlas.s3.us-west-2.amazonaws.com/index.html#mapmycells/SEAAD-taxonomy/20240831/. |
+| 10x Whole human brain taxonomy (CCN20240330) | Transcriptomic diversity of cell types in adult human brain. Source file used is `precomputed_stats.siletti.training.h5`. | https://allen-brain-cell-atlas.s3.us-west-2.amazonaws.com/index.html#mapmycells/WHB-10Xv3/20240831/. |
 | 10x Whole mouse brain taxonomy (CCN20230722) | A high-resolution transcriptomic and spatial atlas of cell types in the whole mouse brain. Source files used are `precomputed_stats_ABC_revision_230821.h5` and `mouse_markers_230821.json`. | https://allen-brain-cell-atlas.s3.us-west-2.amazonaws.com/index.html#mapmycells/WMB-10X/20240831/. |
 
 

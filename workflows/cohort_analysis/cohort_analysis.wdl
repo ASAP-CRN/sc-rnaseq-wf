@@ -15,13 +15,20 @@ workflow cohort_analysis {
 		# If provided, these files will be uploaded to the staging bucket alongside other intermediate files made by this workflow
 		Array[String] preprocessing_output_file_paths = []
 
+		# Kamath et al. 2022 dopaminergic neuron spike-in (human only)
+		File? kamath_post_qc_adata_object
+
 		# Filtering parameters
+		Int? n_cells
 		Int pct_counts_mt_max
 		Float doublet_score_max
 		Array[Int] total_counts_limits
 		Array[Int] n_genes_by_counts_limits
+		Float n_mads_lower
+		Float n_mads_upper
 
 		# Allen Institute's Map My Cells
+		String mmc_taxonomy
 		File allen_brain_mmc_precomputed_stats_h5
 		File? allen_brain_mmc_marker_genes_json
 
@@ -49,6 +56,7 @@ workflow cohort_analysis {
 		String crn_release_version
 		String run_timestamp
 		String raw_data_path_prefix
+		String? modality
 		Array[String] staging_data_buckets
 		String billing_project
 		String container_registry
@@ -56,11 +64,16 @@ workflow cohort_analysis {
 	}
 
 	String sub_workflow_name = "cohort_analysis"
-	String sub_workflow_version = "4.0.0"
+	String sub_workflow_version = "5.0.0"
 
 	Array[Array[String]] workflow_info = [[run_timestamp, workflow_name, workflow_version, workflow_release]]
 
-	String raw_data_path = "~{raw_data_path_prefix}/~{sub_workflow_name}/~{sub_workflow_version}/~{run_timestamp}"
+	String raw_data_path = if defined(modality) then "~{raw_data_path_prefix}/~{sub_workflow_name}/~{modality}/~{sub_workflow_version}/~{run_timestamp}" else "~{raw_data_path_prefix}/~{sub_workflow_name}/~{sub_workflow_version}/~{run_timestamp}"
+
+	# Each modality needs its own staging prefix
+	String staging_path_prefix = "~{workflow_name}/release/~{crn_release_version}"
+	String preprocess_staging_data_path = if defined(modality) then "~{staging_path_prefix}/preprocess/~{modality}" else "~{staging_path_prefix}/preprocess"
+	String cohort_staging_data_path = if defined(modality) then "~{staging_path_prefix}/~{sub_workflow_name}/~{modality}" else "~{staging_path_prefix}/~{sub_workflow_name}"
 
 	call WriteCohortSampleList.write_cohort_sample_list {
 		input:
@@ -77,6 +90,7 @@ workflow cohort_analysis {
 		input:
 			cohort_id = cohort_id,
 			preprocessed_adata_objects = preprocessed_adata_objects,
+			n_cells = n_cells,
 			raw_data_path = raw_data_path,
 			workflow_info = workflow_info,
 			billing_project = billing_project,
@@ -84,14 +98,23 @@ workflow cohort_analysis {
 			zones = zones
 	}
 
+	# Downsampled outputs only exist when n_cells is provided
+	if (defined(n_cells)) {
+		String merged_downsampled_adata_object_path = merge_and_plot_qc_metrics.merged_downsampled_adata_object
+		String qc_initial_metadata_downsampled_csv_path = merge_and_plot_qc_metrics.qc_initial_metadata_downsampled_csv
+		Array[String] qc_plots_downsampled_png_paths = merge_and_plot_qc_metrics.qc_plots_downsampled_png
+	}
+
 	call filter {
 		input:
 			cohort_id = cohort_id,
-			merged_adata_object = merge_and_plot_qc_metrics.merged_adata_object, #!FileCoercion
+			merged_adata_object = select_first([merged_downsampled_adata_object_path, merge_and_plot_qc_metrics.merged_adata_object]), #!FileCoercion
 			pct_counts_mt_max = pct_counts_mt_max,
 			doublet_score_max = doublet_score_max,
 			total_counts_limits = total_counts_limits,
 			n_genes_by_counts_limits = n_genes_by_counts_limits,
+			n_mads_lower = n_mads_lower,
+			n_mads_upper = n_mads_upper,
 			container_registry = container_registry,
 			zones = zones
 	}
@@ -100,6 +123,7 @@ workflow cohort_analysis {
 		input:
 			cohort_id = cohort_id,
 			filtered_adata_object = filter.filtered_adata_object,
+			mmc_taxonomy = mmc_taxonomy,
 			allen_brain_mmc_precomputed_stats_h5 = allen_brain_mmc_precomputed_stats_h5,
 			allen_brain_mmc_marker_genes_json = allen_brain_mmc_marker_genes_json,
 			raw_data_path = raw_data_path,
@@ -138,10 +162,24 @@ workflow cohort_analysis {
 			zones = zones
 	}
 
+	if (defined(kamath_post_qc_adata_object)) {
+		call spike_in_da {
+			input:
+				cohort_id = cohort_id,
+				kamath_post_qc_adata_object = select_first([kamath_post_qc_adata_object]),
+				mmc_adata_object = add_mapped_cell_types.mmc_adata_object,
+				all_genes_csv = normalize.all_genes_csv, #!FileCoercion
+				norm_target_sum = norm_target_sum,
+				n_comps = n_comps,
+				container_registry = container_registry,
+				zones = zones
+		}
+	}
+
 	call ClusterData.cluster_data {
 		input:
 			cohort_id = cohort_id,
-			mmc_adata_object = add_mapped_cell_types.mmc_adata_object,
+			mmc_adata_object = select_first([spike_in_da.spiked_da_adata_object, add_mapped_cell_types.mmc_adata_object]),
 			scvi_latent_key = scvi_latent_key,
 			scanvi_latent_key = scanvi_latent_key,
 			scanvi_predictions_key = scanvi_predictions_key,
@@ -198,7 +236,7 @@ workflow cohort_analysis {
 		input:
 			output_file_paths = preprocessing_output_file_paths,
 			staging_data_buckets = staging_data_buckets,
-			staging_data_path = "~{workflow_name}/release/~{crn_release_version}/preprocess",
+			staging_data_path = preprocess_staging_data_path,
 			billing_project = billing_project,
 			zones = zones
 	}
@@ -211,7 +249,12 @@ workflow cohort_analysis {
 			merge_and_plot_qc_metrics.merged_adata_object,
 			merge_and_plot_qc_metrics.qc_initial_metadata_csv
 		],
+		select_all([
+			merged_downsampled_adata_object_path,
+			qc_initial_metadata_downsampled_csv_path
+		]),
 		merge_and_plot_qc_metrics.qc_plots_png,
+		select_first([qc_plots_downsampled_png_paths, []]),
 		[
 			map_cell_types.mmc_extended_results_json,
 			map_cell_types.mmc_results_csv,
@@ -247,7 +290,7 @@ workflow cohort_analysis {
 		input:
 			output_file_paths = cohort_analysis_final_output_paths,
 			staging_data_buckets = staging_data_buckets,
-			staging_data_path = "~{workflow_name}/release/~{crn_release_version}/~{sub_workflow_name}",
+			staging_data_path = cohort_staging_data_path,
 			billing_project = billing_project,
 			zones = zones
 	}
@@ -259,6 +302,9 @@ workflow cohort_analysis {
 		File merged_adata_object = merge_and_plot_qc_metrics.merged_adata_object #!FileCoercion
 		File qc_initial_metadata_csv = merge_and_plot_qc_metrics.qc_initial_metadata_csv #!FileCoercion
 		Array[File] qc_plots_png = merge_and_plot_qc_metrics.qc_plots_png #!FileCoercion
+		File? merged_downsampled_adata_object = merged_downsampled_adata_object_path #!FileCoercion
+		File? qc_initial_metadata_downsampled_csv = qc_initial_metadata_downsampled_csv_path #!FileCoercion
+		Array[File]? qc_plots_downsampled_png = qc_plots_downsampled_png_paths #!FileCoercion
 		File filtered_adata_object = filter.filtered_adata_object
 		File mmc_extended_results_json = map_cell_types.mmc_extended_results_json #!FileCoercion
 		File mmc_results_csv = map_cell_types.mmc_results_csv #!FileCoercion
@@ -268,6 +314,7 @@ workflow cohort_analysis {
 		File hvg_genes_csv = normalize.hvg_genes_csv #!FileCoercion
 		File mmc_adata_object = add_mapped_cell_types.mmc_adata_object
 		File mmc_results_parquet = add_mapped_cell_types.mmc_results_parquet #!FileCoercion
+		File? spiked_da_adata_object = spike_in_da.spiked_da_adata_object
 
 		# Clustering output
 		File integrated_adata_object = cluster_data.integrated_adata_object
@@ -294,7 +341,7 @@ workflow cohort_analysis {
 	}
 
 	meta {
-		description: "Merges preprocessed per-sample AnnData objects and runs QC filtering, Allen Brain MMC cell type mapping, normalization, scVI/scANVI integration, Leiden clustering, UMAP visualization, Harmony batch correction, and integration quality metrics for a cohort."
+		description: "Merges and optionally downsamples preprocessed per-sample AnnData objects and runs QC filtering, Allen Brain MMC cell type mapping, normalization, optional Kamath et al. 2022 DA neuron spike-in, scVI/scANVI integration, Leiden clustering, UMAP visualization, Harmony batch correction, and integration quality metrics for a cohort."
 	}
 
 	parameter_meta {
@@ -302,14 +349,19 @@ workflow cohort_analysis {
 		project_sample_ids: {help: "Associated team ID, sample ID, and dataset DOI URL; used to generate a sample list."}
 		preprocessed_adata_objects: {help: "An array of preprocessed AnnData objects to run cohort analysis on."}
 		preprocessing_output_file_paths: {help: "Selected preprocessed output files to upload to the staging bucket alongside selected cohort analysis output files."}
+		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object (Ensembl IDs as var_names) whose dopaminergic neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels; human only. If not provided, no cells are spiked in."}
+		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement for downsampling. Default is to keep all cells."}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
-		total_counts_limits: {help: "Minimum and maximum total UMI (unique molecular identifier) counts per cell. [100, 100000]"}
-		n_genes_by_counts_limits: {help: "Minimum and maximum number of genes detected per cell (genes with at least one count). [100, 10000]"}
+		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000]"}
+		n_genes_by_counts_limits: {help: "Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 15000]"}
+		n_mads_lower: {help: "Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3]"}
+		n_mads_upper: {help: "Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5]"}
+		mmc_taxonomy: {help: "Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEAAD' (human), 'Siletti' (human), or 'ABC' (mouse)."}
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}
 		allen_brain_mmc_marker_genes_json: {help: "A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data."}
 		norm_target_sum: {help: "The total count value that each cell will be normalized to. [10000]"}
-		n_top_genes: {help: "Number of HVG genes to keep. [8000]"}
+		n_top_genes: {help: "Number of HVG genes to keep. [3000]"}
 		n_comps: {help: "Number of principal components to compute. [30]"}
 		scvi_latent_key: {help: "Latent key to save the scVI latent to. ['X_scVI']"}
 		scanvi_latent_key: {help: "Latent key to save the scANVI latent to. ['X_scANVI']"}
@@ -325,6 +377,7 @@ workflow cohort_analysis {
 		crn_release_version: {help: "CRN Cloud release version; used to organize outputs and for the CRN Cloud release."}
 		run_timestamp: {help: "UTC timestamp; stored in the file-level manifest and final manifest with all saved files."}
 		raw_data_path_prefix: {help: "Raw data bucket path prefix; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis`)."}
+		modality: {help: "Modality subdirectory ('rna', 'atac', or 'multiome') appended to the raw and staging data paths; set when several modality sub-workflows run together so they do not overwrite each other's outputs. Omit to write directly under the base paths."}
 		staging_data_buckets: {help: "Array of staging data buckets to upload intermediate files to (i.e., DEV or UAT buckets depending on internal QC status)."}
 		billing_project: {help: "Billing project to charge GCP costs."}
 		container_registry: {help: "Container registry where workflow Docker images are hosted."}
@@ -336,6 +389,8 @@ task merge_and_plot_qc_metrics {
 	input {
 		String cohort_id
 		Array[File] preprocessed_adata_objects
+
+		Int? n_cells
 
 		String raw_data_path
 		Array[Array[String]] workflow_info
@@ -356,10 +411,14 @@ task merge_and_plot_qc_metrics {
 			echo -e "${sample}\t${adata_path}" >> adata_samples_paths.tsv
 		done < ~{write_lines(preprocessed_adata_objects)}
 
+		/usr/bin/time \
 		merge_and_plot_qc \
 			--adata-objects-fofn adata_samples_paths.tsv \
+			~{"--n-cells " + n_cells} \
 			--adata-output ~{cohort_id}.merged_cleaned_unfiltered.h5ad \
-			--output-metadata-file ~{cohort_id}.initial_metadata.csv
+			--output-metadata-file ~{cohort_id}.initial_metadata.csv \
+			~{if defined(n_cells) then "--ds-adata-output " + cohort_id + ".merged_cleaned_unfiltered.downsampled.h5ad" else ""} \
+			~{if defined(n_cells) then "--ds-output-metadata-file " + cohort_id + ".initial_metadata.downsampled.csv" else ""}
 
 		mv "plots/violin_n_genes_by_counts.png" "plots/~{cohort_id}.n_genes_by_counts.violin.png"
 		mv "plots/violin_total_counts.png" "plots/~{cohort_id}.total_counts.violin.png"
@@ -378,12 +437,31 @@ task merge_and_plot_qc_metrics {
 			-o plots/"~{cohort_id}.pct_counts_mt.violin.png" \
 			-o plots/"~{cohort_id}.pct_counts_rb.violin.png" \
 			-o plots/"~{cohort_id}.doublet_score.violin.png"
+
+		if ~{defined(n_cells)}; then
+			mv "ds_plots/violin_n_genes_by_counts.png" "ds_plots/~{cohort_id}.n_genes_by_counts.violin.downsampled.png"
+			mv "ds_plots/violin_total_counts.png" "ds_plots/~{cohort_id}.total_counts.violin.downsampled.png"
+			mv "ds_plots/violin_pct_counts_mt.png" "ds_plots/~{cohort_id}.pct_counts_mt.violin.downsampled.png"
+			mv "ds_plots/violin_pct_counts_rb.png" "ds_plots/~{cohort_id}.pct_counts_rb.violin.downsampled.png"
+			mv "ds_plots/violin_doublet_score.png" "ds_plots/~{cohort_id}.doublet_score.violin.downsampled.png"
+
+			upload_outputs \
+				-b ~{billing_project} \
+				-d ~{raw_data_path} \
+				-i ~{write_tsv(workflow_info)} \
+				-o "~{cohort_id}.merged_cleaned_unfiltered.downsampled.h5ad" \
+				-o "~{cohort_id}.initial_metadata.downsampled.csv" \
+				-o ds_plots/"~{cohort_id}.n_genes_by_counts.violin.downsampled.png" \
+				-o ds_plots/"~{cohort_id}.total_counts.violin.downsampled.png" \
+				-o ds_plots/"~{cohort_id}.pct_counts_mt.violin.downsampled.png" \
+				-o ds_plots/"~{cohort_id}.pct_counts_rb.violin.downsampled.png" \
+				-o ds_plots/"~{cohort_id}.doublet_score.violin.downsampled.png"
+		fi
 	>>>
 
 	output {
 		String merged_adata_object = "~{raw_data_path}/~{cohort_id}.merged_cleaned_unfiltered.h5ad"
 		String qc_initial_metadata_csv = "~{raw_data_path}/~{cohort_id}.initial_metadata.csv"
-
 		Array[String] qc_plots_png = [
 			"~{raw_data_path}/~{cohort_id}.n_genes_by_counts.violin.png",
 			"~{raw_data_path}/~{cohort_id}.total_counts.violin.png",
@@ -391,25 +469,35 @@ task merge_and_plot_qc_metrics {
 			"~{raw_data_path}/~{cohort_id}.pct_counts_rb.violin.png",
 			"~{raw_data_path}/~{cohort_id}.doublet_score.violin.png"
 		]
+		String merged_downsampled_adata_object = "~{raw_data_path}/~{cohort_id}.merged_cleaned_unfiltered.downsampled.h5ad"
+		String qc_initial_metadata_downsampled_csv = "~{raw_data_path}/~{cohort_id}.initial_metadata.downsampled.csv"
+		Array[String] qc_plots_downsampled_png = [
+			"~{raw_data_path}/~{cohort_id}.n_genes_by_counts.violin.downsampled.png",
+			"~{raw_data_path}/~{cohort_id}.total_counts.violin.downsampled.png",
+			"~{raw_data_path}/~{cohort_id}.pct_counts_mt.violin.downsampled.png",
+			"~{raw_data_path}/~{cohort_id}.pct_counts_rb.violin.downsampled.png",
+			"~{raw_data_path}/~{cohort_id}.doublet_score.violin.downsampled.png"
+		]
 	}
 
 	runtime {
-		docker: "~{container_registry}/sc_tools:1.2.1"
+		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: 4
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones
 	}
 
 	meta {
-		description: "Merges sample-level AnnData objects to a single cohort-level AnnData object and generates pre-filtering QC violin plots for key metrics."
+		description: "Merges and optionally downsamples sample-level AnnData objects to a single cohort-level AnnData object and generates pre-filtering QC violin plots for key metrics."
 	}
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
+		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement for downsampling. Default is to keep all cells."}
 		preprocessed_adata_objects: {help: "An array of preprocessed AnnData objects to run cohort analysis on."}
 		raw_data_path: {help: "Raw data bucket path for merged adata and QC plots outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
 		workflow_info: {help: "UTC timestamp, workflow name, workflow version, and GitHub release; stored in the file-level manifest and final manifest with all saved files."}
@@ -428,6 +516,8 @@ task filter {
 		Float doublet_score_max
 		Array[Int] total_counts_limits
 		Array[Int] n_genes_by_counts_limits
+		Float n_mads_lower
+		Float n_mads_upper
 
 		String container_registry
 		String zones
@@ -440,12 +530,15 @@ task filter {
 	command <<<
 		set -euo pipefail
 
+		/usr/bin/time \
 		filter \
 			--adata-input ~{merged_adata_object} \
 			--pct-counts-mt-max ~{pct_counts_mt_max} \
 			--doublet-score-max ~{doublet_score_max} \
 			--total-counts-limits ~{sep=' ' total_counts_limits} \
 			--n-genes-by-counts-limits ~{sep=' ' n_genes_by_counts_limits} \
+			--n-mads-lower ~{n_mads_lower} \
+			--n-mads-upper ~{n_mads_upper} \
 			--adata-output ~{cohort_id}.filtered.h5ad
 	>>>
 
@@ -454,18 +547,18 @@ task filter {
 	}
 
 	runtime {
-		docker: "~{container_registry}/sc_tools:1.2.1"
+		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: 4
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones
 	}
 
 	meta {
-		description: "Filters low-quality cells from the merged AnnData object based on mitochondrial content, doublet score, total UMI counts, and number of detected genes."
+		description: "Filters low-quality cells from the merged AnnData object based on mitochondrial content, doublet score, total UMI counts, and number of detected genes. UMI count and detected gene thresholds combine absolute limits with per-sample median absolute deviation (MAD) cutoffs."
 	}
 
 	parameter_meta {
@@ -473,8 +566,10 @@ task filter {
 		merged_adata_object: {help: "Merged AnnData object."}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
-		total_counts_limits: {help: "Minimum and maximum total UMI (unique molecular identifier) counts per cell. [100, 100000]"}
-		n_genes_by_counts_limits: {help: "Minimum and maximum number of genes detected per cell (genes with at least one count). [100, 10000]"}
+		total_counts_limits: {help: "Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000]"}
+		n_genes_by_counts_limits: {help: "Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 15000]"}
+		n_mads_lower: {help: "Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3]"}
+		n_mads_upper: {help: "Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5]"}
 		container_registry: {help: "Container registry where workflow Docker images are hosted."}
 		zones: {help: "Space-delimited set of GCP zones to spin up compute in. ['us-central1-c us-central1-f']"}
 	}
@@ -485,6 +580,7 @@ task map_cell_types {
 		String cohort_id
 		File filtered_adata_object
 
+		String mmc_taxonomy
 		File allen_brain_mmc_precomputed_stats_h5
 		File? allen_brain_mmc_marker_genes_json
 
@@ -495,14 +591,15 @@ task map_cell_types {
 		String zones
 	}
 
-	String mmc_output_prefix = if defined(allen_brain_mmc_marker_genes_json) then "~{cohort_id}.mmc_markers_mapping" else "~{cohort_id}.mmc_otf_mapping.SEAAD"
+	String mmc_mapping_mode = if defined(allen_brain_mmc_marker_genes_json) then "mmc_markers_mapping" else "mmc_otf_mapping"
+	String mmc_output_prefix = "~{cohort_id}.~{mmc_mapping_mode}.~{mmc_taxonomy}"
 
-	Int threads = 4
-	Int calc_human_mem_gb = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 50)
-	# Mouse brain mapping requires extra memory due to MMC's FromSpecifiedMarkersRunner's architecture
-	Int calc_mouse_mem_gb = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 50 + (threads * 10))
-	Int mem_gb = if defined(allen_brain_mmc_marker_genes_json) then calc_mouse_mem_gb else calc_human_mem_gb
-	Int disk_size = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 20)
+	Int threads = 16
+	Int calc_mem_gb = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 8 + 100)
+	Int mem_gb = if calc_mem_gb > 624 then 624 else calc_mem_gb
+	# MMC's find_markers_for_all_taxonomy_pairs writes unthinned marker scratch to the working disk
+	# That scratch scales with the reference taxonomy rather than with the inputs, so it needs a floor of its own
+	Int disk_size = ceil(size([filtered_adata_object, allen_brain_mmc_precomputed_stats_h5], "GB") * 4 + 250)
 
 	command <<<
 		set -euo pipefail
@@ -511,7 +608,7 @@ task map_cell_types {
 		mmc \
 			--adata-input ~{filtered_adata_object} \
 			--mmc-precomputed-stats ~{allen_brain_mmc_precomputed_stats_h5} \
-			--n-processors ~{if threads > 4 then 4 else threads} \
+			--n-processors ~{if defined(allen_brain_mmc_marker_genes_json) then 4 else threads} \
 			--output-prefix ~{mmc_output_prefix} \
 			~{if defined(allen_brain_mmc_marker_genes_json) then "--mmc-marker-genes " + allen_brain_mmc_marker_genes_json else ""}
 
@@ -531,23 +628,24 @@ task map_cell_types {
 	}
 
 	runtime {
-		docker: "~{container_registry}/sc_tools:1.2.1"
+		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: threads
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones
 	}
 
 	meta {
-		description: "Assigns cell type labels using the Allen Brain Cell Atlas MapMyCells (MMC) tool. Uses on-the-fly (SEAAD) mapping for human data or marker-gene-based mapping for mouse data when a marker genes JSON is provided."
+		description: "Assigns cell type labels using the Allen Brain Cell Atlas MapMyCells (MMC) tool. Uses on-the-fly (SEAAD or Siletti) mapping for human data or marker-gene-based mapping for mouse data when a marker genes JSON is provided."
 	}
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
 		filtered_adata_object: {help: "QC-filtered AnnData object."}
+		mmc_taxonomy: {help: "Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEAAD' (human), 'Siletti' (human), or 'ABC' (mouse)."}
 		allen_brain_mmc_precomputed_stats_h5: {help: "A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy)."}
 		allen_brain_mmc_marker_genes_json: {help: "A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data."}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
@@ -585,6 +683,7 @@ task normalize {
 	command <<<
 		set -euo pipefail
 
+		/usr/bin/time \
 		process \
 			--adata-input ~{filtered_adata_object} \
 			--workflow-name ~{workflow_name} \
@@ -611,11 +710,11 @@ task normalize {
 	}
 
 	runtime {
-		docker: "~{container_registry}/sc_tools:1.2.1"
+		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: threads
 		cpuPlatform: "AMD Rome"
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones
@@ -629,7 +728,7 @@ task normalize {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
 		filtered_adata_object: {help: "QC-filtered AnnData object."}
 		norm_target_sum: {help: "The total count value that each cell will be normalized to. [10000]"}
-		n_top_genes: {help: "Number of HVG genes to keep. [8000]"}
+		n_top_genes: {help: "Number of HVG genes to keep. [3000]"}
 		n_comps: {help: "Number of principal components to compute. [30]"}
 		batch_key: {help: "Key in AnnData object for batch information. ['batch_id']"}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
@@ -661,6 +760,7 @@ task add_mapped_cell_types {
 	command <<<
 		set -euo pipefail
 
+		/usr/bin/time \
 		transcriptional_phenotype \
 			--adata-input ~{normalized_adata_object} \
 			--workflow-name ~{workflow_name} \
@@ -681,11 +781,11 @@ task add_mapped_cell_types {
 	}
 
 	runtime {
-		docker: "~{container_registry}/sc_tools:1.2.1"
+		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: 4
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones
@@ -702,6 +802,68 @@ task add_mapped_cell_types {
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
 		workflow_info: {help: "UTC timestamp, workflow name, workflow version, and GitHub release; stored in the file-level manifest and final manifest with all saved files."}
 		billing_project: {help: "Billing project to charge GCP costs."}
+		container_registry: {help: "Container registry where workflow Docker images are hosted."}
+		zones: {help: "Space-delimited set of GCP zones to spin up compute in. ['us-central1-c us-central1-f']"}
+	}
+}
+
+task spike_in_da {
+	input {
+		String cohort_id
+		File kamath_post_qc_adata_object
+		File mmc_adata_object
+		File all_genes_csv
+
+		Int norm_target_sum
+		Int n_comps
+
+		String container_registry
+		String zones
+	}
+
+	Int calc_mem_gb = ceil(size([mmc_adata_object, kamath_post_qc_adata_object], "GB") * 6 + 20)
+	Int mem_gb = if calc_mem_gb > 624 then 624 else calc_mem_gb
+	Int disk_size = ceil(size([mmc_adata_object, kamath_post_qc_adata_object], "GB") * 4 + 20)
+
+	command <<<
+		set -euo pipefail
+
+		/usr/bin/time \
+		prep_da_spike_in \
+			--adata-input ~{kamath_post_qc_adata_object} \
+			--adata-cohort ~{mmc_adata_object} \
+			--all-genes-csv ~{all_genes_csv} \
+			--norm-target-sum ~{norm_target_sum} \
+			--n-comps ~{n_comps} \
+			--adata-output "~{cohort_id}.mmc.kamath_da_spike_in.h5ad"
+	>>>
+
+	output {
+		File spiked_da_adata_object = "~{cohort_id}.mmc.kamath_da_spike_in.h5ad"
+	}
+
+	runtime {
+		docker: "~{container_registry}/sc_tools:1.3.0"
+		cpu: 4
+		cpuPlatform: "Intel Cascade Lake"
+		memory: "~{mem_gb} GB"
+		disks: "local-disk ~{disk_size} HDD"
+		preemptible: 3
+		bootDiskSizeGb: 40
+		zones: zones
+	}
+
+	meta {
+		description: "Formats Kamath et al. 2022 dopaminergic (DA) neurons to match the cohort (gene symbols, per-donor batch_id, QC metrics, raw counts and log1p normalized expression, cell cycle scores, DA subtype cell_type labels), spikes them into the cohort's MMC-labeled AnnData object restricted to the cohort's HVGs, and recomputes PCA on all cells. Spike-in cells are flagged with obs['is_spike_in']."
+	}
+
+	parameter_meta {
+		cohort_id: {help: "Name of the cohort; used to name output files."}
+		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object with Ensembl IDs as var_names; only cells with a DA subtype label are spiked in."}
+		mmc_adata_object: {help: "Normalized, HVG-subset AnnData object with MMC cell type labels to spike the DA neurons into."}
+		all_genes_csv: {help: "Cohort gene metadata CSV from normalize (gene symbols as index, Ensembl IDs in 'gene_id'); used to map spike-in Ensembl IDs to the cohort's gene symbols."}
+		norm_target_sum: {help: "The total count value that each spike-in cell will be normalized to; matches the cohort. [10000]"}
+		n_comps: {help: "Number of principal components to compute on the merged AnnData object. [30]"}
 		container_registry: {help: "Container registry where workflow Docker images are hosted."}
 		zones: {help: "Space-delimited set of GCP zones to spin up compute in. ['us-central1-c us-central1-f']"}
 	}
@@ -729,6 +891,7 @@ task integrate_harmony {
 
 		nvidia-smi
 
+		/usr/bin/time \
 		add_harmony \
 			--batch-key ~{batch_key} \
 			--adata-input ~{umap_clustered_adata_object} \
@@ -749,16 +912,15 @@ task integrate_harmony {
 	}
 
 	runtime {
-		docker: "~{container_registry}/sc_tools:1.2.1"
+		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: 8
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones
 		gpuType: "nvidia-tesla-t4"
 		gpuCount: 1
-		nvidiaDriverVersion: "545.23.08" #!UnknownRuntimeKey
 	}
 
 	meta {
@@ -822,11 +984,11 @@ task artifact_metrics {
 	}
 
 	runtime {
-		docker: "~{container_registry}/sc_tools:1.2.1"
+		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: 16
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		bootDiskSizeGb: 40
 		zones: zones
 	}
@@ -893,11 +1055,11 @@ task plot_groups_and_features {
 	}
 
 	runtime {
-		docker: "~{container_registry}/sc_tools:1.2.1"
+		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: 2
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones

@@ -79,13 +79,13 @@ workflow cluster_data {
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files during cross-team cohort analysis."}
-		mmc_adata_object: {help: "AnnData object with MMC cell type labels from cohort_analysis."}
+		mmc_adata_object: {help: "AnnData object with MMC cell type labels from cohort_analysis; includes Kamath et al. 2022 DA neuron spike-in cells (obs['is_spike_in']) with DA subtype labels if provided."}
 		scvi_latent_key: {help: "Latent key to save the scVI latent to. ['X_scVI']"}
 		scanvi_latent_key: {help: "Latent key to save the scANVI latent to. ['X_scANVI']"}
 		scanvi_predictions_key: {help: "scANVI cell type predictions column name. ['C_scANVI']"}
 		batch_key: {help: "Key in AnnData object for batch information. ['batch_id']"}
 		n_neighbors: {help: "The size of local neighborhood (in terms of number of neighboring data points) used for manifold approximation. [15]"}
-		leiden_res: {help: "Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.05, 0.1, 0.2, 0.4]"}
+		leiden_res: {help: "Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.2, 0.5, 1.0]"}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
 		workflow_name: {help: "Workflow name; stored in the file-level manifest and final manifest with all saved files."}
 		workflow_info: {help: "UTC timestamp, workflow name, workflow version, and GitHub release; stored in the file-level manifest and final manifest with all saved files."}
@@ -111,6 +111,7 @@ task integrate_sample_data {
 	}
 
 	Int mem_gb = ceil(size(mmc_adata_object, "GB") * 5 + 20)
+	String gpu_type = if mem_gb > 78 then "nvidia-tesla-t4" else "nvidia-tesla-v100"
 	Int disk_size = ceil(size(mmc_adata_object, "GB") * 3 + 50)
 
 	command <<<
@@ -142,15 +143,14 @@ task integrate_sample_data {
 	}
 
 	runtime {
-		docker: "~{container_registry}/sc_tools:1.2.1"
-		cpu: 4
+		docker: "~{container_registry}/sc_tools:1.3.0"
+		cpu: 8
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		bootDiskSizeGb: 40
 		zones: zones
-		gpuType: "nvidia-tesla-t4"
+		gpuType: gpu_type
 		gpuCount: 1
-		nvidiaDriverVersion: "545.23.08" #!UnknownRuntimeKey
 	}
 
 	meta {
@@ -159,7 +159,7 @@ task integrate_sample_data {
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
-		mmc_adata_object: {help: "AnnData object with MMC cell type labels to integrate."}
+		mmc_adata_object: {help: "AnnData object with MMC cell type labels, and Kamath et al. 2022 DA neuron spike-in cells if provided, to integrate."}
 		scvi_latent_key: {help: "Latent key to save the scVI latent to. ['X_scVI']"}
 		batch_key: {help: "Key in AnnData object for batch information. ['batch_id']"}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
@@ -188,6 +188,7 @@ task assign_remaining_cells {
 	}
 
 	Int mem_gb = ceil(size(integrated_adata_object, "GB") * 12 + 30)
+	String gpu_type = if mem_gb > 78 then "nvidia-tesla-t4" else "nvidia-tesla-v100"
 	Int disk_size = ceil(size(integrated_adata_object, "GB") * 3 + 50)
 
 	command <<<
@@ -227,15 +228,14 @@ task assign_remaining_cells {
 	}
 
 	runtime {
-		docker: "~{container_registry}/sc_tools:1.2.1"
-		cpu: 16
+		docker: "~{container_registry}/sc_tools:1.3.0"
+		cpu: 8
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
+		disks: "local-disk ~{disk_size} SSD"
 		bootDiskSizeGb: 40
 		zones: zones
-		gpuType: "nvidia-tesla-t4"
+		gpuType: gpu_type
 		gpuCount: 1
-		nvidiaDriverVersion: "545.23.08" #!UnknownRuntimeKey
 	}
 
 	meta {
@@ -291,14 +291,14 @@ task cluster_cells {
 	}
 
 	runtime {
-		docker: "~{container_registry}/sc_tools:1.2.1"
+		docker: "~{container_registry}/sc_tools:1.3.0"
 		cpu: 16
-		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
-		disks: "local-disk ~{disk_size} HDD"
-		preemptible: 3
+		disks: "local-disk ~{disk_size} SSD"
 		bootDiskSizeGb: 40
 		zones: zones
+		gpuType: "nvidia-tesla-t4"
+		gpuCount: 1
 	}
 
 	meta {
@@ -310,7 +310,7 @@ task cluster_cells {
 		labeled_cells_adata_object: {help: "AnnData object with scANVI cell type labels from assign_remaining_cells."}
 		scvi_latent_key: {help: "Latent key to save the scVI latent to. ['X_scVI']"}
 		n_neighbors: {help: "The size of local neighborhood (in terms of number of neighboring data points) used for manifold approximation. [15]"}
-		leiden_res: {help: "Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.05, 0.1, 0.2, 0.4]"}
+		leiden_res: {help: "Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.2, 0.5, 1.0]"}
 		container_registry: {help: "Container registry where workflow Docker images are hosted."}
 		zones: {help: "Space-delimited set of GCP zones to spin up compute in. ['us-central1-c us-central1-f']"}
 	}
