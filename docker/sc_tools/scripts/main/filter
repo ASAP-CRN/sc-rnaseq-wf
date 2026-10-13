@@ -209,7 +209,7 @@ if __name__ == "__main__":
         type=int,
         nargs="+",
         required=True,
-        help="Absolute minimum and maximum number of genes detected per cell (genes with at least one count) [300, 10000]"
+        help="Absolute minimum and maximum number of genes detected per cell (genes with at least one count) [300, 15000]"
     )
     parser.add_argument(
         "--n-mads-lower",
