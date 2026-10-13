@@ -48,7 +48,7 @@ workflow sc_rnaseq_analysis {
 		Int n_neighbors = 15
 		Array[Float] leiden_res = [0.2, 0.5, 1.0]
 
-		Array[String] groups = ["sample", "batch", "cell_type", "leiden_res_0.20", "leiden_res_0.50", "leiden_res_1.0"]
+		Array[String] groups = ["sample", "batch_id", "cell_type", "leiden_res_0.20", "leiden_res_0.50", "leiden_res_1.0"]
 		Array[String] features = ["n_genes_by_counts", "total_counts", "pct_counts_mt", "pct_counts_rb", "doublet_score", "S_score", "G2M_score"]
 
 		# Cohort analysis
@@ -347,7 +347,7 @@ workflow sc_rnaseq_analysis {
 		batch_key: {help: "Key in AnnData object for batch information. ['batch_id']"}
 		n_neighbors: {help: "The size of local neighborhood (in terms of number of neighboring data points) used for manifold approximation. [15]"}
 		leiden_res: {help: "Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.2, 0.5, 1.0]"}
-		groups: {help: "Groups to produce umap plots for. ['sample', 'batch', 'cell_type', 'leiden_res_0.20', 'leiden_res_0.50', 'leiden_res_1.0']"}
+		groups: {help: "Groups to produce umap plots for. ['sample', 'batch_id', 'cell_type', 'leiden_res_0.20', 'leiden_res_0.50', 'leiden_res_1.0']"}
 		features: {help: "Features to produce umap plots for. ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_rb', 'doublet_score', 'S_score', 'G2M_score']"}
 		run_cross_team_cohort_analysis: {help: "Whether to run downstream harmonization steps on all samples across projects. If set to false, only preprocessing steps (cellranger and generating the initial adata object(s)) will run for samples. [false]"}
 		cohort_raw_data_bucket: {help: "Bucket to upload cross-team cohort intermediate files to."}

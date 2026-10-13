@@ -92,7 +92,7 @@ If you process the data yourself instead of (or after) using this workflow, cons
 - **Keep raw counts.** scVI/scANVI expect raw counts (`layers["counts"]`); normalized values are only for HVG selection, PCA and plotting.
 - **Choose the batch key carefully.** This workflow integrates on `batch_id` (team, dataset and batch). Integrating on a variable confounded with biology (e.g. disease status or brain region) removes real signal.
 - **Pick a reference that matches your tissue.** Check that the cell types you care about exist in the reference taxonomy. Consider adding a targeted reference (as with the Kamath DA spike-in) for rare populations.
-- **Plan for scale.** Memory scales with the number of cells; a cohort of several million cells needs hundreds of GB of RAM for merging and scANVI, and a GPU for scVI/scANVI, clustering and Harmony.
+- **Plan for scale.** Memory scales with the number of cells; a cohort of several million cells needs hundreds of GB of RAM for merging and QC, and a GPU for scVI/scANVI, clustering and Harmony.
     - Subsample (e.g. to 500,000 cells) for integration metrics such as `scib-metrics`; computing them on all cells can take days.
     - Lower the learning rate and use gradient clipping when training scVI/scANVI on very large cohorts to avoid the training diverging to NaN.
     - GPU libraries such as rapids-singlecell do not support older GPUs (e.g. NVIDIA V100); check compatibility before choosing a machine type.
@@ -137,7 +137,7 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | String | cohort_id | Name of the cohort; used to name output files during cross-team cohort analysis. |
 | Array[[Project](#project)] | projects | The project ID, set of samples and their associated reads and metadata, output bucket locations, and whether or not to run project-level cohort analysis. |
 | File? | kamath_post_qc_adata_object | Downsampled and QC-filtered Kamath et al. 2022 AnnData object (e.g. `kamath_merged_da_all_non_da_13000_postQC.h5ad`; see [sc_tools scripts README](docker/sc_tools/scripts/README.md)). Its dopaminergic (DA) neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels (e.g. SOX6_AGTR1, CALB1_GEM); human only. If not provided, no cells are spiked in. |
-| File | cellranger_reference_data | Cellranger transcriptome reference data; see https://www.10xgenomics.com/support/software/cell-ranger/downloads/previous-versions. |
+| File | cellranger_reference_data | Cellranger transcriptome reference data; see https://www.10xgenomics.com/support/software/cell-ranger/downloads/previous-versions and [Cell Ranger references](#cell-ranger-references). |
 | Float? | cellbender_fpr | Cellbender false positive rate for signal removal. [0.0] |
 | Int? | n_cells | Number of cells to keep. Cells are drawn uniformly at random without replacement for downsampling. Default is to keep all cells. |
 | Float? | pct_counts_mt_max | Maximum percentage of mitochondrial gene counts allowed per cell. [10] |
@@ -147,8 +147,8 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | Float? | n_mads_lower | Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3] |
 | Float? | n_mads_upper | Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5] |
 | String | mmc_taxonomy | Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEAAD' (human), 'Siletti' (human), or 'ABC' (mouse). |
-| File? | allen_brain_mmc_precomputed_stats_h5 | A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy). |
-| File? | allen_brain_mmc_marker_genes_json | A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data. |
+| File? | allen_brain_mmc_precomputed_stats_h5 | A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy); see [Allen Brain Institute's MapMyCells references](#allen-brain-institutes-mapmycells-references). |
+| File? | allen_brain_mmc_marker_genes_json | A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data; see [Allen Brain Institute's MapMyCells references](#allen-brain-institutes-mapmycells-references). |
 | Int? | norm_target_sum | The total count value that each cell will be normalized to. [10000] |
 | Int? | n_top_genes | Number of HVG genes to keep. [3000] |
 | Int? | n_comps | Number of principal components to compute. [30] |
@@ -158,7 +158,7 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | String? | batch_key | Key in AnnData object for batch information. ['batch_id'] |
 | Int? | n_neighbors | The size of local neighborhood (in terms of number of neighboring data points) used for manifold approximation. [15] |
 | Array[Float]? | leiden_res | Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.2, 0.5, 1.0] |
-| Array[String]? | groups | Groups to produce umap plots for. ['sample', 'batch', 'cell_type', 'leiden_res_0.20', 'leiden_res_0.50', 'leiden_res_1.0'] |
+| Array[String]? | groups | Groups to produce umap plots for. ['sample', 'batch_id', 'cell_type', 'leiden_res_0.20', 'leiden_res_0.50', 'leiden_res_1.0'] |
 | Array[String]? | features | Features to produce umap plots for. ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_rb', 'doublet_score', 'S_score', 'G2M_score'] |
 | Boolean? | run_cross_team_cohort_analysis | Whether to run downstream harmonization steps on all samples across projects. If set to false, only preprocessing steps (cellranger and generating the initial adata object(s)) will run for samples. [false] |
 | String | cohort_raw_data_bucket | Bucket to upload cross-team cohort intermediate files to. |
@@ -198,36 +198,41 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 
 ## Generating the inputs JSON
 
-The inputs JSON may be generated manually, however when running a large number of samples, this can become unwieldly. The [`generate_inputs` utility script](https://github.com/ASAP-CRN/wf-common/blob/main/util/generate_inputs) may be used to automatically generate the inputs JSON (`inputs.{staging_env}.{cohort_dataset_id}.{date}.json`) and a sample list TSV (`{team_id}.{cohort_dataset_id}.sample_list.{date}.tsv`); same as the one generated in [the write_cohort_sample_list task](https://github.com/ASAP-CRN/wf-common/wdl/tasks/write_cohort_sample_list.wdl)). The script requires the libraries outlined in [the requirements.txt file](https://github.com/ASAP-CRN/wf-common/util/requirements.txt) and the following inputs:
+The inputs JSON may be generated manually, however when running a large number of samples, this can become unwieldly. The [`generate_inputs` utility script](https://github.com/ASAP-CRN/wf-common/blob/main/util/workflow_inputs/generate_inputs) may be used to automatically generate the inputs JSON (`inputs.{staging_env}.{cohort_dataset_id}.{date}.json`) and a sample list TSV (`{team_id}.{cohort_dataset_id}.sample_list.{date}.tsv`); same as the one generated in [the write_cohort_sample_list task](https://github.com/ASAP-CRN/wf-common/blob/main/wdl/tasks/write_cohort_sample_list.wdl)). The script requires the libraries outlined in [the requirements.txt file](https://github.com/ASAP-CRN/wf-common/blob/main/util/requirements.txt) and the following inputs:
 
-- `project-tsv`: One or more project TSVs with one row per sample and columns team_id, ASAP_dataset_id, ASAP_sample_id, batch, sex, fastq_R1s, fastq_R2s, fastq_R3s, fastq_I1s, fastq_I2s, embargoed, source, modality_flavour, dataset_DOI_url, and SPATIAL columns if applicable: geomx_config, geomx_dsp_config, geomx_annotation_file, visium_cytassist, visium_probe_set, visium_slide_ref, and visium_capture_area. All samples from all projects may be included in the same project TSV, or multiple project TSVs may be provided.
+- `project-tsv`: One or more project TSVs with one row per sample and the columns below. All samples from all projects may be included in the same project TSV, or multiple project TSVs may be provided.
     - `team_id`: A unique identifier for the team from which the sample(s) arose.
     - `ASAP_dataset_id`: A generated unique identifier for the dataset from which the sample(s) arose.
     - `ASAP_sample_id`: A generated unique identifier for the sample within the project.
+    - `subject_id`: The subject (donor) identifier assigned by the team.
+    - `ASAP_subject_id`: A generated unique identifier for the subject (donor).
     - `batch`: The sample's batch.
-    - `sex`: The sample's sex.
-    - `brain_region_level_1`: Abbreviation of most granular anatomical region (Level 1).
-    - `brain_region_level_2`: Abbreviation of intermediate level anatomical region (Level 2).
-    - `brain_region_level_3`: Abbreviation of coarse level anatomical region (Level 3).
-    - `fastq_R1s`: The gs uri to read 1 of sample FASTQ.
-        - This is appended to the `project-tsv` from the `fastq-locs-txt`: FASTQ locations for all samples provided in the `project-tsv`. Each sample is expected to have one set of paired fastqs located at `${fastq_path}/${sample_id}*`. The read 1 file should include 'R1' somewhere in the filename. Generate this file e.g. by running `gcloud storage ls gs://fastq_bucket/some/path/**.fastq.gz >> fastq_locs.txt`.
-    - `fastq_R2s`: The gs uri to read 2 of sample FASTQ.
-        - This is appended to the `project-tsv` from the `fastq-locs-txt`: FASTQ locations for all samples provided in the `project-tsv`. Each sample is expected to have one set of paired fastqs located at `${fastq_path}/${sample_id}*`. The read 2 file should include 'R2' somewhere in the filename. Generate this file e.g. by running `gcloud storage ls gs://fastq_bucket/some/path/**.fastq.gz >> fastq_locs.txt`.
-    - `fastq_I1s`: The gs uri to sample FASTQ index 1.
-    - `fastq_I2s`: The gs uri to sample FASTQ index 2.
-    - `embargoed`: The internal QC/embargo status of dataset.
-    - `source`: The source of dataset (e.g. 'pmdbs').
-    - `modality_flavour`: The data modality flavour of dataset (e.g. 'sn-rnaseq')
-    - `dataset_DOI_url`: Generated Zenodo DOI URL referencing the dataset.
+    - `sex`: The sample's sex; lowercased in the inputs JSON (e.g. 'Female' → 'female').
+    - `region_level_1`: Most granular anatomical region (Level 1), with abbreviation and UBERON ID.
+    - `region_level_2`: Intermediate level anatomical region (Level 2), with abbreviation and UBERON ID.
+    - `region_level_3`: Coarse level anatomical region (Level 3), with abbreviation and UBERON ID.
+        - Region values are lowercased and written to the inputs JSON as `brain_region_level_1`, `brain_region_level_2` and `brain_region_level_3`. Empty values are written as `null`, which the workflow sets to 'NA'.
+    - `fastq_R1s`: List of gs URIs to the sample's read 1 FASTQs (one per lane).
+    - `fastq_R2s`: List of gs URIs to the sample's read 2 FASTQs (one per lane).
+    - `fastq_R3s`: List of gs URIs to the sample's read 3 FASTQs; only used by ATAC-seq workflows (`[]` otherwise).
+    - `fastq_I1s`: List of gs URIs to the sample's index 1 FASTQs.
+    - `fastq_I2s`: List of gs URIs to the sample's index 2 FASTQs.
+    - `embargoed`: The internal QC/embargo status of the dataset. Embargoed datasets are written to the dev staging bucket only; others to the dev and uat staging buckets.
+    - `dataset_id`: Dataset name used in bucket names (`gs://asap-raw-{dataset_id}`, `gs://asap-{dev,uat}-{dataset_id}`), e.g. `team-xxyy-pmdbs-sn-rnaseq`.
+    - `source`: The source of the dataset (e.g. 'pmdbs' or 'mouse').
+    - `assay`: The assay of the dataset (e.g. 'sn-rnaseq' or 'sc-rnaseq').
+    - `dataset_doi_url`: Generated Zenodo DOI URL referencing the dataset.
+    - `pool_id`: Pool identifier for multiplexed samples; leave empty if not applicable.
 - `inputs-template`: The inputs template JSON file into which the `projects` information derived from the `project-tsv` will be inserted. Must have a key ending in `*.projects`. Other default values filled out in the inputs template will be written to the output inputs.json file.
 - `run-project-cohort-analysis`: Optionally run project-level cohort analysis for provided projects. This value will apply to all projects. [false]
 - `workflow_name`: WDL workflow name.
+- `release-version`: CRN release version (e.g. 'v6.0.0'); used to locate the project's `SAMPLE.csv` metadata.
 - `cohort-dataset-id`: Dataset name in cohort bucket id (e.g. 'cohort-pmdbs-sc-rnaseq').
 
 Example usage:
 
 ```bash
-./wf-common/util/generate_inputs \
+./wf-common/util/workflow_inputs/generate_inputs \
     --project-tsv metadata.tsv \
     --inputs-template workflows/inputs.json \
     --run-project-cohort-analysis \
@@ -235,6 +240,32 @@ Example usage:
     --release-version v5.0.0 \
     --cohort-dataset-id cohort-pmdbs-sc-rnaseq
 ```
+
+Example project TSV row (shown one column per line; FASTQ lists shortened to two lanes):
+
+| Column | Example |
+| :- | :- |
+| team_id | team-example |
+| ASAP_dataset_id | DS_PMDBS_0000 |
+| ASAP_sample_id | ASAP_PMDBS_000000_s001_BiolRep1 |
+| subject_id | EX_T_001 |
+| ASAP_subject_id | ASAP_PMDBS_000000 |
+| batch | Batch1 |
+| sex | Female |
+| region_level_1 | Midbrain mesencephalon (MB, UBERON:0001891) |
+| region_level_2 | Substantia nigra (SN, UBERON:0002038) |
+| region_level_3 | Grey matter (GM, UBERON:0002020) |
+| fastq_R1s | ['gs://asap-raw-team-example-pmdbs-sn-rnaseq/fastqs/sample1_S1_L001_R1_001.fastq.gz', 'gs://asap-raw-team-example-pmdbs-sn-rnaseq/fastqs/sample1_S1_L002_R1_001.fastq.gz'] |
+| fastq_R2s | ['gs://asap-raw-team-example-pmdbs-sn-rnaseq/fastqs/sample1_S1_L001_R2_001.fastq.gz', 'gs://asap-raw-team-example-pmdbs-sn-rnaseq/fastqs/sample1_S1_L002_R2_001.fastq.gz'] |
+| fastq_R3s | [] |
+| fastq_I1s | ['gs://asap-raw-team-example-pmdbs-sn-rnaseq/fastqs/sample1_S1_L001_I1_001.fastq.gz', 'gs://asap-raw-team-example-pmdbs-sn-rnaseq/fastqs/sample1_S1_L002_I1_001.fastq.gz'] |
+| fastq_I2s | ['gs://asap-raw-team-example-pmdbs-sn-rnaseq/fastqs/sample1_S1_L001_I2_001.fastq.gz', 'gs://asap-raw-team-example-pmdbs-sn-rnaseq/fastqs/sample1_S1_L002_I2_001.fastq.gz'] |
+| embargoed | False |
+| dataset_id | team-example-pmdbs-sn-rnaseq |
+| source | pmdbs |
+| assay | sn-rnaseq |
+| dataset_doi_url | https://doi.org/10.5281/zenodo.0000000 |
+| pool_id | |
 
 # Outputs
 
@@ -371,7 +402,7 @@ asap-dev-{cohort,team-xxyy}-{source}-{modality_flavour}-{context}
 
 ## Promoting staging data
 
-The [`promote_staging_data` script](https://github.com/ASAP-CRN/wf-common/blob/main/util/promote_staging_data) can be used to promote staging data that has been approved to the curated data bucket for a team or set of teams.
+The [`promote_staging_data` script](https://github.com/ASAP-CRN/wf-common/blob/main/util/data_promotion/promote_staging_data) can be used to promote staging data that has been approved to the curated data bucket for a team or set of teams.
 
 This script compiles bucket and file information for both the initial (staging) and target (prod) environment. It also runs data integrity tests to ensure staging data can be promoted and generates a Markdown report. It (1) checks that files are not empty and are not less than or equal to 10 bytes (factoring in white space) and (2) checks that files have associated metadata and is present in MANIFEST.tsv.
 
@@ -395,16 +426,16 @@ The script defaults to a dry run, printing out the files that would be copied or
 
 ```bash
 # List available teams
-./wf-common/util/promote_staging_data -l -w pmdbs_sc_rnaseq -v v4.0.0
+./wf-common/util/data_promotion/promote_staging_data -l -w pmdbs_sc_rnaseq -v v4.0.0
 
 # Print out the files that would be copied or deleted from the staging bucket to the curated bucket for teams' datasets processed through the sc RNA-seq pipeline for a specific release version
-./wf-common/util/promote_staging_data -w pmdbs_sc_rnaseq -v v4.0.0
+./wf-common/util/data_promotion/promote_staging_data -w pmdbs_sc_rnaseq -v v4.0.0
 
 # Promote data for teams' datasets processed through the sc RNA-seq pipeline for a specific release version
-./wf-common/util/promote_staging_data -w pmdbs_sc_rnaseq -v v4.0.0 -p
+./wf-common/util/data_promotion/promote_staging_data -w pmdbs_sc_rnaseq -v v4.0.0 -p
 
 # Promote data for teams' datasets processed through the sc RNA-seq pipeline for a specific release version
-./wf-common/util/promote_staging_data -w mouse_sc_rnaseq -v v4.0.0 -p
+./wf-common/util/data_promotion/promote_staging_data -w mouse_sc_rnaseq -v v4.0.0 -p
 ```
 
 # Docker images
@@ -458,7 +489,7 @@ Docker images can be build using the [`build_docker_images`](https://github.com/
 | cellbender | <ul><li>[cellbender v0.3.0](https://github.com/broadinstitute/CellBender/releases/tag/v0.3.0)</li><li>[google-cloud-cli 397.0.0](https://cloud.google.com/sdk/docs/release-notes#39700_2022-08-09)</li><li>[python 3.7.16](https://www.python.org/downloads/release/python-3716/)</li><li>[miniconda 23.1.0](https://docs.anaconda.com/miniconda/miniconda-release-notes/)</li><li>[cuda 11.4.0](https://developer.nvidia.com/cuda-11-4-0-download-archive)</li></ul> | [Dockerfile](https://github.com/ASAP-CRN/sc-rnaseq-wf/tree/main/docker/cellbender) |
 | cellranger | <ul><li>[cellranger v10.1.0](https://www.10xgenomics.com/support/software/cell-ranger/latest/release-notes/cr-release-notes#v10-1-0)</li><li>[google-cloud-cli 524.0.0](https://cloud.google.com/sdk/docs/release-notes#52400_2025-05-28)</li></ul> | [Dockerfile](https://github.com/ASAP-CRN/sc-rnaseq-wf/tree/main/docker/cellranger) |
 | sc_tools | <ul><li>[google-cloud-cli 524.0.0](https://cloud.google.com/sdk/docs/release-notes#52400_2025-05-28)</li><li>[python 3.12.15](https://www.python.org/downloads/release/python-31215/)</li><li>[cuda 12.3.0](https://developer.nvidia.com/cuda-12-3-0-download-archive)</li><li>[torch 2.6.0](https://github.com/pytorch/pytorch/releases/tag/v2.6.0)</li></ul> Python libraries: <ul><li>[scvi-tools 1.3.2](https://github.com/scverse/scvi-tools/releases/tag/1.3.2)</li><li>[scanpy 1.11.3](https://scanpy.readthedocs.io/en/stable/release-notes/index.html#v1-11-3)</li><li>[anndata 0.12.19](https://anndata.readthedocs.io/en/stable/release-notes/index.html)</li><li>[rapids-singlecell 0.18.0](https://github.com/scverse/rapids_singlecell/releases/tag/v0.18.0)</li><li>[jax 0.4.35](https://github.com/jax-ml/jax/releases/tag/jax-v0.4.35)</li><li>[scikit-learn 1.7.2](https://github.com/scikit-learn/scikit-learn/releases/tag/1.7.2)</li><li>[scib-metrics 0.5.6](https://github.com/YosefLab/scib-metrics/releases/tag/v0.5.6)</li><li>[cell_type_mapper 1.5.3](https://github.com/AllenInstitute/cell_type_mapper/releases/tag/v1.5.3)</li><li>tables 3.11.1</li></ul> Full pinned versions: [requirements.txt](docker/sc_tools/requirements.txt), [constraints.txt](docker/sc_tools/constraints.txt) | [Dockerfile](https://github.com/ASAP-CRN/sc-rnaseq-wf/tree/main/docker/sc_tools) |
-| util | <ul><li>[google-cloud-cli 524.0.0](https://cloud.google.com/sdk/docs/release-notes#52400_2025-05-28)</li></ul> | [Dockerfile](https://github.com/ASAP-CRN/wf-common/tree/main/docker/util) |
+| util | <ul><li>[google-cloud-cli 524.0.0](https://cloud.google.com/sdk/docs/release-notes#52400_2025-05-28)</li></ul> | [Dockerfile](https://github.com/ASAP-CRN/wf-common/blob/main/docker/util) |
 | DEPRECATED - multiome | <ul><li>[google-cloud-cli 444.0.0](https://cloud.google.com/sdk/docs/release-notes#44400_2023-08-22)</li><li>[multiome seuratv4 environment](https://github.com/shahrozeabbas/Multiome-SeuratV4/tree/main)</li><li>[R scripts](https://github.com/shahrozeabbas/Harmony-RNA-Workflow/tree/main/scripts)</li></ul> | [Dockerfile](https://github.com/ASAP-CRN/sc-rnaseq-wf/tree/main/docker/multiome) |
 
 # wdl-ci

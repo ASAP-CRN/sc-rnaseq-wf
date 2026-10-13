@@ -24,7 +24,7 @@
   "sc_rnaseq_analysis.batch_key": "String (optional, default = \"batch_id\")",
   "sc_rnaseq_analysis.n_neighbors": "Int (optional, default = 15)",
   "sc_rnaseq_analysis.leiden_res": "Array[Float] (optional, default = [0.2, 0.5, 1.0])",
-  "sc_rnaseq_analysis.groups": "Array[String] (optional, default = [\"sample\", \"batch\", \"cell_type\", \"leiden_res_0.20\", \"leiden_res_0.50\", \"leiden_res_1.0\"])",
+  "sc_rnaseq_analysis.groups": "Array[String] (optional, default = [\"sample\", \"batch_id\", \"cell_type\", \"leiden_res_0.20\", \"leiden_res_0.50\", \"leiden_res_1.0\"])",
   "sc_rnaseq_analysis.features": "Array[String] (optional, default = [\"n_genes_by_counts\", \"total_counts\", \"pct_counts_mt\", \"pct_counts_rb\", \"doublet_score\", \"S_score\", \"G2M_score\"])",
   "sc_rnaseq_analysis.run_cross_team_cohort_analysis": "Boolean (optional, default = false)",
   "sc_rnaseq_analysis.cohort_raw_data_bucket": "String",
