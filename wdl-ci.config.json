@@ -7,7 +7,7 @@
       "tasks": {
         "merge_and_plot_qc_metrics": {
           "key": "merge_and_plot_qc_metrics",
-          "digest": "m3mwanao3tka36vedngx5qu5ixapjnjc",
+          "digest": "b3sxkcreklfbszt4q6clavae75ghgxs5",
           "tests": [
             {
               "inputs": {
