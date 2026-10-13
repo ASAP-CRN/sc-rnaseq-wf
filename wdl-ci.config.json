@@ -277,6 +277,7 @@
                 "final_adata_object": "${input_resources_file_path}/${cohort_workflow_name}/${cohort_id}.final.h5ad",
                 "scanvi_predictions_key": "${scanvi_predictions_key}",
                 "batch_key": "${batch_key}",
+                "benchmark_spike_in": false,
                 "raw_data_path": "${cohort_raw_data_path}",
                 "workflow_info": "${workflow_info}",
                 "billing_project": "${billing_project}",

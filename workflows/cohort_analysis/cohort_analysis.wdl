@@ -442,17 +442,15 @@ task merge_and_plot_qc_metrics {
 		mv "plots/violin_pct_counts_rb.png" "plots/~{cohort_id}.pct_counts_rb.violin.png"
 		mv "plots/violin_doublet_score.png" "plots/~{cohort_id}.doublet_score.violin.png"
 
-		upload_outputs \
-			-b ~{billing_project} \
-			-d ~{raw_data_path} \
-			-i ~{write_tsv(workflow_info)} \
-			-o "~{cohort_id}.merged_cleaned_unfiltered.h5ad" \
-			-o "~{cohort_id}.initial_metadata.csv" \
-			-o plots/"~{cohort_id}.n_genes_by_counts.violin.png" \
-			-o plots/"~{cohort_id}.total_counts.violin.png" \
-			-o plots/"~{cohort_id}.pct_counts_mt.violin.png" \
-			-o plots/"~{cohort_id}.pct_counts_rb.violin.png" \
+		upload_args=(
+			-o "~{cohort_id}.merged_cleaned_unfiltered.h5ad"
+			-o "~{cohort_id}.initial_metadata.csv"
+			-o plots/"~{cohort_id}.n_genes_by_counts.violin.png"
+			-o plots/"~{cohort_id}.total_counts.violin.png"
+			-o plots/"~{cohort_id}.pct_counts_mt.violin.png"
+			-o plots/"~{cohort_id}.pct_counts_rb.violin.png"
 			-o plots/"~{cohort_id}.doublet_score.violin.png"
+		)
 
 		if ~{defined(n_cells)}; then
 			mv "ds_plots/violin_n_genes_by_counts.png" "ds_plots/~{cohort_id}.n_genes_by_counts.violin.downsampled.png"
@@ -461,18 +459,22 @@ task merge_and_plot_qc_metrics {
 			mv "ds_plots/violin_pct_counts_rb.png" "ds_plots/~{cohort_id}.pct_counts_rb.violin.downsampled.png"
 			mv "ds_plots/violin_doublet_score.png" "ds_plots/~{cohort_id}.doublet_score.violin.downsampled.png"
 
-			upload_outputs \
-				-b ~{billing_project} \
-				-d ~{raw_data_path} \
-				-i ~{write_tsv(workflow_info)} \
-				-o "~{cohort_id}.merged_cleaned_unfiltered.downsampled.h5ad" \
-				-o "~{cohort_id}.initial_metadata.downsampled.csv" \
-				-o ds_plots/"~{cohort_id}.n_genes_by_counts.violin.downsampled.png" \
-				-o ds_plots/"~{cohort_id}.total_counts.violin.downsampled.png" \
-				-o ds_plots/"~{cohort_id}.pct_counts_mt.violin.downsampled.png" \
-				-o ds_plots/"~{cohort_id}.pct_counts_rb.violin.downsampled.png" \
+			upload_args+=(
+				-o "~{cohort_id}.merged_cleaned_unfiltered.downsampled.h5ad"
+				-o "~{cohort_id}.initial_metadata.downsampled.csv"
+				-o ds_plots/"~{cohort_id}.n_genes_by_counts.violin.downsampled.png"
+				-o ds_plots/"~{cohort_id}.total_counts.violin.downsampled.png"
+				-o ds_plots/"~{cohort_id}.pct_counts_mt.violin.downsampled.png"
+				-o ds_plots/"~{cohort_id}.pct_counts_rb.violin.downsampled.png"
 				-o ds_plots/"~{cohort_id}.doublet_score.violin.downsampled.png"
+			)
 		fi
+
+		upload_outputs \
+			-b ~{billing_project} \
+			-d ~{raw_data_path} \
+			-i ~{write_tsv(workflow_info)} \
+			"${upload_args[@]}"
 	>>>
 
 	output {
@@ -1008,20 +1010,20 @@ task artifact_metrics {
 		mv "scib_report_dir/scib_report.csv" "scib_report_dir/~{cohort_id}.scib_report.csv"
 		mv "scib_report_dir/scib_results.svg" "scib_report_dir/~{cohort_id}.scib_results.svg"
 
+		upload_args=(
+			-o "scib_report_dir/~{cohort_id}.scib_report.csv"
+			-o "scib_report_dir/~{cohort_id}.scib_results.svg"
+		)
+
+		if ~{benchmark_spike_in}; then
+			upload_args+=(-o "~{cohort_id}.spike_in_benchmark.csv")
+		fi
+
 		upload_outputs \
 			-b ~{billing_project} \
 			-d ~{raw_data_path} \
 			-i ~{write_tsv(workflow_info)} \
-			-o "scib_report_dir/~{cohort_id}.scib_report.csv" \
-			-o "scib_report_dir/~{cohort_id}.scib_results.svg"
-
-		if ~{benchmark_spike_in}; then
-			upload_outputs \
-				-b ~{billing_project} \
-				-d ~{raw_data_path} \
-				-i ~{write_tsv(workflow_info)} \
-				-o "~{cohort_id}.spike_in_benchmark.csv"
-		fi
+			"${upload_args[@]}"
 	>>>
 
 	output {
