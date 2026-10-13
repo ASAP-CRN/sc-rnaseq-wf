@@ -98,17 +98,10 @@ workflow cohort_analysis {
 			zones = zones
 	}
 
-	# Downsampled outputs only exist when n_cells is provided
-	if (defined(n_cells)) {
-		String merged_downsampled_adata_object_path = merge_and_plot_qc_metrics.merged_downsampled_adata_object
-		String qc_initial_metadata_downsampled_csv_path = merge_and_plot_qc_metrics.qc_initial_metadata_downsampled_csv
-		Array[String] qc_plots_downsampled_png_paths = merge_and_plot_qc_metrics.qc_plots_downsampled_png
-	}
-
 	call filter {
 		input:
 			cohort_id = cohort_id,
-			merged_adata_object = select_first([merged_downsampled_adata_object_path, merge_and_plot_qc_metrics.merged_adata_object]), #!FileCoercion
+			merged_adata_object = select_first([merge_and_plot_qc_metrics.merged_downsampled_adata_object, merge_and_plot_qc_metrics.merged_adata_object]), #!FileCoercion
 			pct_counts_mt_max = pct_counts_mt_max,
 			doublet_score_max = doublet_score_max,
 			total_counts_limits = total_counts_limits,
@@ -252,12 +245,16 @@ workflow cohort_analysis {
 			merge_and_plot_qc_metrics.merged_adata_object,
 			merge_and_plot_qc_metrics.qc_initial_metadata_csv
 		],
-		select_all([
-			merged_downsampled_adata_object_path,
-			qc_initial_metadata_downsampled_csv_path
-		]),
 		merge_and_plot_qc_metrics.qc_plots_png,
-		select_first([qc_plots_downsampled_png_paths, []]),
+		select_all([
+			merge_and_plot_qc_metrics.merged_downsampled_adata_object,
+			merge_and_plot_qc_metrics.qc_initial_metadata_downsampled_csv
+		]),
+		flatten(
+			select_all([
+				merge_and_plot_qc_metrics.qc_plots_downsampled_png
+			])
+		),
 		[
 			filter.filtered_out_cells_csv
 		],
@@ -308,9 +305,9 @@ workflow cohort_analysis {
 		File merged_adata_object = merge_and_plot_qc_metrics.merged_adata_object #!FileCoercion
 		File qc_initial_metadata_csv = merge_and_plot_qc_metrics.qc_initial_metadata_csv #!FileCoercion
 		Array[File] qc_plots_png = merge_and_plot_qc_metrics.qc_plots_png #!FileCoercion
-		File? merged_downsampled_adata_object = merged_downsampled_adata_object_path #!FileCoercion
-		File? qc_initial_metadata_downsampled_csv = qc_initial_metadata_downsampled_csv_path #!FileCoercion
-		Array[File]? qc_plots_downsampled_png = qc_plots_downsampled_png_paths #!FileCoercion
+		File? merged_downsampled_adata_object = merge_and_plot_qc_metrics.merged_downsampled_adata_object #!FileCoercion
+		File? qc_initial_metadata_downsampled_csv = merge_and_plot_qc_metrics.qc_initial_metadata_downsampled_csv #!FileCoercion
+		Array[File]? qc_plots_downsampled_png = merge_and_plot_qc_metrics.qc_plots_downsampled_png #!FileCoercion
 		File filtered_adata_object = filter.filtered_adata_object
 		File filtered_out_cells_csv = filter.filtered_out_cells_csv #!FileCoercion
 		File mmc_extended_results_json = map_cell_types.mmc_extended_results_json #!FileCoercion
@@ -404,6 +401,10 @@ task merge_and_plot_qc_metrics {
 		String billing_project
 		String container_registry
 		String zones
+
+		# Purposefully unset
+		String? my_none
+		Array[String]? my_none_array
 	}
 
 	Int mem_gb = ceil(size(preprocessed_adata_objects, "GB") * 2.4 + 20)
@@ -476,15 +477,15 @@ task merge_and_plot_qc_metrics {
 			"~{raw_data_path}/~{cohort_id}.pct_counts_rb.violin.png",
 			"~{raw_data_path}/~{cohort_id}.doublet_score.violin.png"
 		]
-		String merged_downsampled_adata_object = "~{raw_data_path}/~{cohort_id}.merged_cleaned_unfiltered.downsampled.h5ad"
-		String qc_initial_metadata_downsampled_csv = "~{raw_data_path}/~{cohort_id}.initial_metadata.downsampled.csv"
-		Array[String] qc_plots_downsampled_png = [
+		String? merged_downsampled_adata_object = if defined(n_cells) then "~{raw_data_path}/~{cohort_id}.merged_cleaned_unfiltered.downsampled.h5ad" else my_none
+		String? qc_initial_metadata_downsampled_csv = if defined(n_cells) then "~{raw_data_path}/~{cohort_id}.initial_metadata.downsampled.csv" else my_none
+		Array[String]? qc_plots_downsampled_png = if defined(n_cells) then [
 			"~{raw_data_path}/~{cohort_id}.n_genes_by_counts.violin.downsampled.png",
 			"~{raw_data_path}/~{cohort_id}.total_counts.violin.downsampled.png",
 			"~{raw_data_path}/~{cohort_id}.pct_counts_mt.violin.downsampled.png",
 			"~{raw_data_path}/~{cohort_id}.pct_counts_rb.violin.downsampled.png",
 			"~{raw_data_path}/~{cohort_id}.doublet_score.violin.downsampled.png"
-		]
+		] else my_none_array
 	}
 
 	runtime {
