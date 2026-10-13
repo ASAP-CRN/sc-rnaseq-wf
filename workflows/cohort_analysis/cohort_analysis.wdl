@@ -852,9 +852,9 @@ task spike_in_da {
 		String zones
 	}
 
-	Int calc_mem_gb = ceil((size(mmc_adata_object, "GB") + size(kamath_post_qc_adata_object, "GB") + size(siletti_post_qc_adata_object, "GB")) * 6 + 20)
+	Int calc_mem_gb = ceil(size([mmc_adata_object, kamath_post_qc_adata_object, siletti_post_qc_adata_object], "GB") * 6 + 20)
 	Int mem_gb = if calc_mem_gb > 624 then 624 else calc_mem_gb
-	Int disk_size = ceil((size(mmc_adata_object, "GB") + size(kamath_post_qc_adata_object, "GB") + size(siletti_post_qc_adata_object, "GB")) * 4 + 20)
+	Int disk_size = ceil(size([mmc_adata_object, kamath_post_qc_adata_object, siletti_post_qc_adata_object], "GB") * 4 + 20)
 
 	command <<<
 		set -euo pipefail
@@ -979,7 +979,7 @@ task artifact_metrics {
 
 		String scanvi_predictions_key
 		String batch_key
-		Boolean benchmark_spike_in = false
+		Boolean benchmark_spike_in
 
 		String raw_data_path
 		Array[Array[String]] workflow_info
@@ -1008,24 +1008,20 @@ task artifact_metrics {
 		mv "scib_report_dir/scib_report.csv" "scib_report_dir/~{cohort_id}.scib_report.csv"
 		mv "scib_report_dir/scib_results.svg" "scib_report_dir/~{cohort_id}.scib_results.svg"
 
-		upload_files=(
-			"scib_report_dir/~{cohort_id}.scib_report.csv"
-			"scib_report_dir/~{cohort_id}.scib_results.svg"
-		)
-		if ~{benchmark_spike_in}; then
-			upload_files+=("~{cohort_id}.spike_in_benchmark.csv")
-		fi
-
-		upload_args=()
-		for file in "${upload_files[@]}"; do
-			upload_args+=(-o "$file")
-		done
-
 		upload_outputs \
 			-b ~{billing_project} \
 			-d ~{raw_data_path} \
 			-i ~{write_tsv(workflow_info)} \
-			"${upload_args[@]}"
+			-o "scib_report_dir/~{cohort_id}.scib_report.csv" \
+			-o "scib_report_dir/~{cohort_id}.scib_results.svg"
+
+		if ~{benchmark_spike_in}; then
+			upload_outputs \
+				-b ~{billing_project} \
+				-d ~{raw_data_path} \
+				-i ~{write_tsv(workflow_info)} \
+				-o "~{cohort_id}.spike_in_benchmark.csv"
+		fi
 	>>>
 
 	output {
@@ -1053,7 +1049,7 @@ task artifact_metrics {
 		final_adata_object: {help: "Final Harmony-integrated AnnData object."}
 		scanvi_predictions_key: {help: "scANVI cell type predictions column name. ['C_scANVI']"}
 		batch_key: {help: "Key in AnnData object for batch information. ['batch_id']"}
-		benchmark_spike_in: {help: "Whether to score scANVI predictions on held-out Siletti spike-in cells against their Allen ground truth labels. [false]"}
+		benchmark_spike_in: {help: "Whether to score scANVI predictions on held-out Siletti spike-in cells against their Allen ground truth labels."}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
 		workflow_info: {help: "UTC timestamp, workflow name, workflow version, and GitHub release; stored in the file-level manifest and final manifest with all saved files."}
 		billing_project: {help: "Billing project to charge GCP costs."}
