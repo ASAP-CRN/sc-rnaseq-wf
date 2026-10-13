@@ -46,7 +46,7 @@ Default QC filters (applied per cell, after merging):
 | :- | :- |
 | Mitochondrial counts (`pct_counts_mt`) | ≤ 10% |
 | Doublet score (scrublet, per sample) | ≤ 0.2 |
-| Total UMI counts | 500–150,000, and within 3 MADs below / 5 MADs above the per-sample median |
+| Total UMI counts | 500–150,000, and within 3 median absolute deviations (MADs) below / 5 MADs above the per-sample median |
 | Genes detected | 300–15,000, and within 3 MADs below / 5 MADs above the per-sample median |
 | Downsampling (`n_cells`) | None; all cells kept |
 | Cell type confidence (MapMyCells) | correlation ≥ 0.5 and bootstrap probability ≥ 0.5, otherwise `Unknown` |
