@@ -100,7 +100,7 @@ If you process the data yourself instead of (or after) using this workflow, cons
 
 # Workflows
 
-Worfklows are defined in [the `workflows` directory](workflows). The python scripts which process the data at each stage can be found [the docker/sc_tools/scripts directory](docker/sc_tools/scripts).
+Worfklows are defined in [the `workflows` directory](workflows). The python scripts which process the data at each stage can be found in [the docker/sc_tools/scripts directory](docker/sc_tools/scripts).
 
 Workflow names:
 - `pmdbs_sc_rnaseq`
