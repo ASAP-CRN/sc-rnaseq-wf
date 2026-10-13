@@ -95,7 +95,7 @@ If you process the data yourself instead of (or after) using this workflow, cons
 - **Plan for scale.** Memory scales with the number of cells; a cohort of several million cells needs hundreds of GB of RAM for merging and QC, and a GPU for scVI/scANVI, clustering and Harmony.
     - Subsample (e.g. to 500,000 cells) for integration metrics such as `scib-metrics`; computing them on all cells can take days.
     - Lower the learning rate and use gradient clipping when training scVI/scANVI on very large cohorts to avoid the training diverging to NaN.
-    - GPU libraries such as rapids-singlecell do not support older GPUs (e.g. NVIDIA V100); check compatibility before choosing a machine type.
+    - GPU libraries such as [rapids-singlecell](https://github.com/scverse/rapids-singlecell) do not support older GPUs (e.g. NVIDIA V100); check compatibility before choosing a machine type.
 - **Downsample to explore.** Set `n_cells` to try parameters on a random subset before running the full cohort.
 
 # Workflows
