@@ -14,6 +14,7 @@ workflow sc_rnaseq_analysis {
 		Array[Project] projects
 
 		File? kamath_post_qc_adata_object
+		File? siletti_post_qc_adata_object
 
 		# Preprocess
 		File cellranger_reference_data
@@ -125,6 +126,7 @@ workflow sc_rnaseq_analysis {
 					preprocessed_adata_objects = preprocess.initial_adata_object,
 					preprocessing_output_file_paths = preprocessing_output_file_paths,
 					kamath_post_qc_adata_object = kamath_post_qc_adata_object,
+					siletti_post_qc_adata_object = siletti_post_qc_adata_object,
 					n_cells = n_cells,
 					pct_counts_mt_max = pct_counts_mt_max,
 					doublet_score_max = doublet_score_max,
@@ -170,6 +172,7 @@ workflow sc_rnaseq_analysis {
 				preprocessed_adata_objects = flatten(preprocess.initial_adata_object),
 				preprocessing_output_file_paths = flatten(preprocessing_output_file_paths),
 				kamath_post_qc_adata_object = kamath_post_qc_adata_object,
+				siletti_post_qc_adata_object = siletti_post_qc_adata_object,
 				n_cells = n_cells,
 				pct_counts_mt_max = pct_counts_mt_max,
 				doublet_score_max = doublet_score_max,
@@ -265,6 +268,7 @@ workflow sc_rnaseq_analysis {
 		Array[File?] project_final_metadata_csv = project_cohort_analysis.final_metadata_csv
 		Array[File?] project_scib_report_results_csv = project_cohort_analysis.scib_report_results_csv
 		Array[File?] project_scib_report_results_svg = project_cohort_analysis.scib_report_results_svg
+		Array[File?] project_spike_in_benchmark_csv = project_cohort_analysis.spike_in_benchmark_csv
 
 		# Groups and features plots
 		Array[File?] project_groups_umap_plot_png = project_cohort_analysis.groups_umap_plot_png
@@ -309,6 +313,7 @@ workflow sc_rnaseq_analysis {
 		File? cohort_final_metadata_csv = cross_team_cohort_analysis.final_metadata_csv
 		File? cohort_scib_report_results_csv = cross_team_cohort_analysis.scib_report_results_csv
 		File? cohort_scib_report_results_svg = cross_team_cohort_analysis.scib_report_results_svg
+		File? cohort_spike_in_benchmark_csv = cross_team_cohort_analysis.spike_in_benchmark_csv
 
 		# Groups and features plots
 		File? cohort_groups_umap_plot_png = cross_team_cohort_analysis.groups_umap_plot_png
@@ -325,7 +330,8 @@ workflow sc_rnaseq_analysis {
 		organism: {help: "Organism; used to select workflow name. Options: 'human' or 'mouse'. If human, 'pmdbs_sc_rnaseq' will be the workflow name (i.e., bucket folder name) and if mouse, 'mouse_sc_rnaseq' will be selected."}
 		cohort_id: {help: "Name of the cohort; used to name output files during cross-team cohort analysis."}
 		projects: {help: "The project ID, set of samples and their associated reads and metadata, output bucket locations, sc data type, and whether or not to run project-level cohort analysis."}
-		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object; its dopaminergic neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels. Human only. If not provided, no cells are spiked in."}
+		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object; its dopaminergic neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels. Human only. If not provided, no Kamath cells are spiked in."}
+		siletti_post_qc_adata_object: {help: "Downsampled and QC-filtered Siletti et al. 2023 midbrain AnnData object; its cells are spiked in unlabeled, with Allen ground truth labels kept to benchmark scANVI predictions (per-label F1). Human only, and only meaningful when MMC uses the Siletti taxonomy. If not provided, no Siletti cells are spiked in."}
 		cellranger_reference_data: {help: "Cellranger transcriptome reference data; see https://support.10xgenomics.com/single-cell-gene-expression/software/downloads/latest."}
 		cellbender_fpr: {help: "Cellbender false positive rate. [0.0]"}
 		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement for downsampling. Default is to keep all cells."}

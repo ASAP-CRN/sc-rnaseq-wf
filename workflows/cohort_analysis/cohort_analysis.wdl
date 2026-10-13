@@ -15,8 +15,9 @@ workflow cohort_analysis {
 		# If provided, these files will be uploaded to the staging bucket alongside other intermediate files made by this workflow
 		Array[String] preprocessing_output_file_paths = []
 
-		# Kamath et al. 2022 dopaminergic neuron spike-in (human only)
+		# Reference cell spike-ins (human only): Kamath et al. 2022 dopaminergic neurons and Siletti et al. 2023 midbrain cells
 		File? kamath_post_qc_adata_object
+		File? siletti_post_qc_adata_object
 
 		# Filtering parameters
 		Int? n_cells
@@ -158,11 +159,12 @@ workflow cohort_analysis {
 			zones = zones
 	}
 
-	if (defined(kamath_post_qc_adata_object)) {
+	if (defined(kamath_post_qc_adata_object) || defined(siletti_post_qc_adata_object)) {
 		call spike_in_da {
 			input:
 				cohort_id = cohort_id,
-				kamath_post_qc_adata_object = select_first([kamath_post_qc_adata_object]),
+				kamath_post_qc_adata_object = kamath_post_qc_adata_object,
+				siletti_post_qc_adata_object = siletti_post_qc_adata_object,
 				mmc_adata_object = add_mapped_cell_types.mmc_adata_object,
 				all_genes_csv = normalize.all_genes_csv, #!FileCoercion
 				norm_target_sum = norm_target_sum,
@@ -208,6 +210,7 @@ workflow cohort_analysis {
 			final_adata_object = integrate_harmony.final_adata_object, #!FileCoercion
 			scanvi_predictions_key = scanvi_predictions_key,
 			batch_key = batch_key,
+			benchmark_spike_in = defined(siletti_post_qc_adata_object),
 			raw_data_path = raw_data_path,
 			workflow_info = workflow_info,
 			billing_project = billing_project,
@@ -283,6 +286,9 @@ workflow cohort_analysis {
 			artifact_metrics.scib_report_results_csv,
 			artifact_metrics.scib_report_results_svg
 		],
+		select_all([
+			artifact_metrics.spike_in_benchmark_csv
+		]),
 		[
 			plot_groups_and_features.groups_umap_plot_png,
 			plot_groups_and_features.features_umap_plot_png
@@ -335,6 +341,7 @@ workflow cohort_analysis {
 		# Artifact metrics
 		File scib_report_results_csv = artifact_metrics.scib_report_results_csv #!FileCoercion
 		File scib_report_results_svg = artifact_metrics.scib_report_results_svg #!FileCoercion
+		File? spike_in_benchmark_csv = artifact_metrics.spike_in_benchmark_csv #!FileCoercion
 
 		# Groups and features plots
 		File groups_umap_plot_png = plot_groups_and_features.groups_umap_plot_png #!FileCoercion
@@ -345,7 +352,7 @@ workflow cohort_analysis {
 	}
 
 	meta {
-		description: "Merges and optionally downsamples preprocessed per-sample AnnData objects and runs QC filtering, Allen Brain MMC cell type mapping, normalization, optional Kamath et al. 2022 DA neuron spike-in, scVI/scANVI integration, Leiden clustering, UMAP visualization, Harmony batch correction, and integration quality metrics for a cohort."
+		description: "Merges and optionally downsamples preprocessed per-sample AnnData objects and runs QC filtering, Allen Brain MMC cell type mapping, normalization, optional Kamath et al. 2022 DA neuron and Siletti et al. 2023 midbrain cell spike-ins, scVI/scANVI integration, Leiden clustering, UMAP visualization, Harmony batch correction, and integration quality metrics for a cohort."
 	}
 
 	parameter_meta {
@@ -353,7 +360,8 @@ workflow cohort_analysis {
 		project_sample_ids: {help: "Associated team ID, sample ID, and dataset DOI URL; used to generate a sample list."}
 		preprocessed_adata_objects: {help: "An array of preprocessed AnnData objects to run cohort analysis on."}
 		preprocessing_output_file_paths: {help: "Selected preprocessed output files to upload to the staging bucket alongside selected cohort analysis output files."}
-		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object (Ensembl IDs as var_names) whose dopaminergic neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels; human only. If not provided, no cells are spiked in."}
+		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object (Ensembl IDs as var_names) whose dopaminergic neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels; human only. If not provided, no Kamath cells are spiked in."}
+		siletti_post_qc_adata_object: {help: "Downsampled and QC-filtered Siletti et al. 2023 midbrain AnnData object (Ensembl IDs as var_names, Allen annotations in obs) whose cells are spiked in unlabeled, with Allen ground truth labels kept to benchmark scANVI predictions; human only, and only meaningful when MMC uses the Siletti taxonomy. If not provided, no Siletti cells are spiked in."}
 		n_cells: {help: "Number of cells to keep. Cells are drawn uniformly at random without replacement for downsampling. Default is to keep all cells."}
 		pct_counts_mt_max: {help: "Maximum percentage of mitochondrial gene counts allowed per cell. [10]"}
 		doublet_score_max: {help: "Maximum doublet detection score threshold. [0.2]"}
@@ -832,7 +840,8 @@ task add_mapped_cell_types {
 task spike_in_da {
 	input {
 		String cohort_id
-		File kamath_post_qc_adata_object
+		File? kamath_post_qc_adata_object
+		File? siletti_post_qc_adata_object
 		File mmc_adata_object
 		File all_genes_csv
 
@@ -843,25 +852,26 @@ task spike_in_da {
 		String zones
 	}
 
-	Int calc_mem_gb = ceil(size([mmc_adata_object, kamath_post_qc_adata_object], "GB") * 6 + 20)
+	Int calc_mem_gb = ceil((size(mmc_adata_object, "GB") + size(kamath_post_qc_adata_object, "GB") + size(siletti_post_qc_adata_object, "GB")) * 6 + 20)
 	Int mem_gb = if calc_mem_gb > 624 then 624 else calc_mem_gb
-	Int disk_size = ceil(size([mmc_adata_object, kamath_post_qc_adata_object], "GB") * 4 + 20)
+	Int disk_size = ceil((size(mmc_adata_object, "GB") + size(kamath_post_qc_adata_object, "GB") + size(siletti_post_qc_adata_object, "GB")) * 4 + 20)
 
 	command <<<
 		set -euo pipefail
 
 		/usr/bin/time \
 		prep_da_spike_in \
-			--adata-input ~{kamath_post_qc_adata_object} \
+			~{"--kamath-adata " + kamath_post_qc_adata_object} \
+			~{"--siletti-adata " + siletti_post_qc_adata_object} \
 			--adata-cohort ~{mmc_adata_object} \
 			--all-genes-csv ~{all_genes_csv} \
 			--norm-target-sum ~{norm_target_sum} \
 			--n-comps ~{n_comps} \
-			--adata-output "~{cohort_id}.mmc.kamath_da_spike_in.h5ad"
+			--adata-output "~{cohort_id}.mmc.spike_in.h5ad"
 	>>>
 
 	output {
-		File spiked_da_adata_object = "~{cohort_id}.mmc.kamath_da_spike_in.h5ad"
+		File spiked_da_adata_object = "~{cohort_id}.mmc.spike_in.h5ad"
 	}
 
 	runtime {
@@ -876,13 +886,14 @@ task spike_in_da {
 	}
 
 	meta {
-		description: "Formats Kamath et al. 2022 dopaminergic (DA) neurons to match the cohort (gene symbols, per-donor batch_id, QC metrics, raw counts and log1p normalized expression, cell cycle scores, DA subtype cell_type labels), spikes them into the cohort's MMC-labeled AnnData object restricted to the cohort's HVGs, and recomputes PCA on all cells. Spike-in cells are flagged with obs['is_spike_in']."
+		description: "Formats reference cells to match the cohort (gene symbols, per-donor/sample batch_id, QC metrics, raw counts and log1p normalized expression, cell cycle scores) and spikes them into the cohort's MMC-labeled AnnData object restricted to the cohort's HVGs, then recomputes PCA on all cells. Kamath et al. 2022 dopaminergic (DA) neurons are labeled with their DA subtype for scANVI training; Siletti et al. 2023 midbrain cells are unlabeled, with Allen ground truth labels in obs['ground_truth_cell_type']. Spike-in cells are flagged with obs['is_spike_in'] and obs['spike_in_source']."
 	}
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
 		kamath_post_qc_adata_object: {help: "Downsampled and QC-filtered Kamath et al. 2022 AnnData object with Ensembl IDs as var_names; only cells with a DA subtype label are spiked in."}
-		mmc_adata_object: {help: "Normalized, HVG-subset AnnData object with MMC cell type labels to spike the DA neurons into."}
+		siletti_post_qc_adata_object: {help: "Downsampled and QC-filtered Siletti et al. 2023 midbrain AnnData object with Ensembl IDs as var_names and Allen annotations (siletti_allen_subcluster, siletti_allen_da_vglut2); all cells are spiked in unlabeled."}
+		mmc_adata_object: {help: "Normalized, HVG-subset AnnData object with MMC cell type labels to spike the reference cells into."}
 		all_genes_csv: {help: "Cohort gene metadata CSV from normalize (gene symbols as index, Ensembl IDs in 'gene_id'); used to map spike-in Ensembl IDs to the cohort's gene symbols."}
 		norm_target_sum: {help: "The total count value that each spike-in cell will be normalized to; matches the cohort. [10000]"}
 		n_comps: {help: "Number of principal components to compute on the merged AnnData object. [30]"}
@@ -968,12 +979,16 @@ task artifact_metrics {
 
 		String scanvi_predictions_key
 		String batch_key
+		Boolean benchmark_spike_in = false
 
 		String raw_data_path
 		Array[Array[String]] workflow_info
 		String billing_project
 		String container_registry
 		String zones
+
+		# Purposefully unset
+		String? my_none
 	}
 
 	Int mem_gb = ceil(size(final_adata_object, "GB") * 8 + 40)
@@ -987,22 +1002,36 @@ task artifact_metrics {
 			--predictions-key ~{scanvi_predictions_key} \
 			--batch-key ~{batch_key} \
 			--adata-input ~{final_adata_object} \
-			--output-report-dir scib_report_dir
+			--output-report-dir scib_report_dir \
+			~{if benchmark_spike_in then "--output-spike-in-benchmark-file " + cohort_id + ".spike_in_benchmark.csv" else ""}
 
 		mv "scib_report_dir/scib_report.csv" "scib_report_dir/~{cohort_id}.scib_report.csv"
 		mv "scib_report_dir/scib_results.svg" "scib_report_dir/~{cohort_id}.scib_results.svg"
+
+		upload_files=(
+			"scib_report_dir/~{cohort_id}.scib_report.csv"
+			"scib_report_dir/~{cohort_id}.scib_results.svg"
+		)
+		if ~{benchmark_spike_in}; then
+			upload_files+=("~{cohort_id}.spike_in_benchmark.csv")
+		fi
+
+		upload_args=()
+		for file in "${upload_files[@]}"; do
+			upload_args+=(-o "$file")
+		done
 
 		upload_outputs \
 			-b ~{billing_project} \
 			-d ~{raw_data_path} \
 			-i ~{write_tsv(workflow_info)} \
-			-o "scib_report_dir/~{cohort_id}.scib_report.csv" \
-			-o "scib_report_dir/~{cohort_id}.scib_results.svg"
+			"${upload_args[@]}"
 	>>>
 
 	output {
 		String scib_report_results_csv = "~{raw_data_path}/~{cohort_id}.scib_report.csv"
 		String scib_report_results_svg = "~{raw_data_path}/~{cohort_id}.scib_results.svg"
+		String? spike_in_benchmark_csv = if benchmark_spike_in then "~{raw_data_path}/~{cohort_id}.spike_in_benchmark.csv" else my_none
 	}
 
 	runtime {
@@ -1016,7 +1045,7 @@ task artifact_metrics {
 	}
 
 	meta {
-		description: "Computes scib-metrics integration quality scores on the final AnnData object and exports results as a CSV report and SVG visualization."
+		description: "Computes scib-metrics integration quality scores on the final AnnData object and exports results as a CSV report and SVG visualization. If Siletti cells were spiked in, also scores scANVI predictions on them against their Allen ground truth (per-label precision, recall and F1)."
 	}
 
 	parameter_meta {
@@ -1024,6 +1053,7 @@ task artifact_metrics {
 		final_adata_object: {help: "Final Harmony-integrated AnnData object."}
 		scanvi_predictions_key: {help: "scANVI cell type predictions column name. ['C_scANVI']"}
 		batch_key: {help: "Key in AnnData object for batch information. ['batch_id']"}
+		benchmark_spike_in: {help: "Whether to score scANVI predictions on held-out Siletti spike-in cells against their Allen ground truth labels. [false]"}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
 		workflow_info: {help: "UTC timestamp, workflow name, workflow version, and GitHub release; stored in the file-level manifest and final manifest with all saved files."}
 		billing_project: {help: "Billing project to charge GCP costs."}

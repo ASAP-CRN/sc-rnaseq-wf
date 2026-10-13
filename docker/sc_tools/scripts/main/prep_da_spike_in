@@ -11,11 +11,23 @@ from anndata import AnnData
 sys.path.append("/opt/scripts/utility")
 from helpers import score_cell_cycle
 
-# Kamath et al. 2022 (https://pubmed.ncbi.nlm.nih.gov/35513515/) DA neuron spike-in
-# Input generated in https://github.com/ASAP-CRN/spatial-sc-rnaseq-integration-wf/tree/c74ea2b5ea543b6a9ecf564183b31ef31360abf0/reference_building/da_neurons_identification_analysis
-SPIKE_IN_ID = "kamath"
-SPIKE_IN_BATCH_KEY = "donor_id"
-SPIKE_IN_CELL_TYPE_KEY = "da_subtype"
+# Reference cells spiked into the cohort before scVI/scANVI. Inputs are generated in
+# https://github.com/ASAP-CRN/spatial-sc-rnaseq-integration-wf/tree/Reference_DA_neurons_BIOS-2607/reference_building/da_neurons_identification_analysis
+#
+# Kamath et al. 2022 (https://pubmed.ncbi.nlm.nih.gov/35513515/): DA neurons only; their DA subtype labels train scANVI
+KAMATH_ID = "kamath"
+KAMATH_BATCH_KEY = "donor_id"
+KAMATH_CELL_TYPE_KEY = "da_subtype"
+# Siletti et al. 2023 (https://pubmed.ncbi.nlm.nih.gov/37824663/): all midbrain cells, unlabeled for scANVI; their
+# Allen Brain Cell Atlas labels are kept as ground truth to benchmark scANVI's predictions
+SILETTI_ID = "siletti"
+SILETTI_BATCH_KEY = "sample_id"
+SILETTI_SUBCLUSTER_KEY = "siletti_allen_subcluster"
+SILETTI_DA_KEY = "siletti_allen_da_vglut2"
+# Allen WHB-taxonomy 20240330 cluster_to_cluster_annotation_membership.csv.gz (CCN202210140), flattened to one row per subcluster
+SILETTI_TAXONOMY_CSV = "/opt/resources/siletti_subcluster_to_supercluster.csv"
+# Matches transcriptional_phenotype: Siletti cluster Splat_395 (DA VGLUT2) is labeled "Dopaminergic"
+DOPAMINERGIC = "Dopaminergic"
 
 
 def ensembl_to_symbols(spike_in: AnnData, all_genes: pd.DataFrame) -> AnnData:
@@ -34,13 +46,14 @@ def ensembl_to_symbols(spike_in: AnnData, all_genes: pd.DataFrame) -> AnnData:
     return spike_in
 
 
-def prep_da_spike_in(spike_in: AnnData, all_genes: pd.DataFrame, norm_target_sum: int) -> AnnData:
+def format_spike_in(
+    spike_in: AnnData, all_genes: pd.DataFrame, norm_target_sum: int, source_id: str, batch_key: str
+) -> AnnData:
     """
-    Format Kamath et al. 2022 DA neurons to match the cohort's normalized AnnData object (see prep_metadata and process)
+    Format reference cells to match the cohort's normalized AnnData object (see prep_metadata and process)
     """
-    # Keep DA neurons only (cells with a DA subtype label)
-    spike_in = spike_in[spike_in.obs[SPIKE_IN_CELL_TYPE_KEY].notna()].copy()
-    print(f"Spike-in DA neurons: {spike_in.n_obs} cells")
+    if batch_key not in spike_in.obs.columns:
+        raise KeyError(f"[ERROR] '{batch_key}' not found in {source_id} obs")
 
     # Raw counts in X
     if "counts" in spike_in.layers:
@@ -69,38 +82,82 @@ def prep_da_spike_in(spike_in: AnnData, all_genes: pd.DataFrame, norm_target_sum
     sc.pp.log1p(spike_in)
     score_cell_cycle(spike_in, organism="human")
 
-    # Metadata matching prep_metadata; one batch per donor
+    # Metadata matching prep_metadata; one batch per donor (Kamath) or sample (Siletti)
     obs = spike_in.obs
-    # Kamath's original batch labels (kamath_{donor_id}), before "batch" is overwritten below
-    obs["spike_in_batch"] = obs["batch"].astype(str)
-    obs["sample"] = obs[SPIKE_IN_BATCH_KEY].astype(str)
-    obs["batch"] = obs[SPIKE_IN_BATCH_KEY].astype(str)
+    # The source's original batch labels, before "batch" is overwritten below
+    if "batch" in obs.columns:
+        obs["spike_in_batch"] = obs["batch"].astype(str)
+    obs["sample"] = obs[batch_key].astype(str)
+    obs["batch"] = obs[batch_key].astype(str)
     obs["sex"] = obs["sex"].astype(str) if "sex" in obs.columns else "Unknown"
     obs["brain_region_level_1"] = "Unknown"
     obs["brain_region_level_2"] = "Unknown"
     obs["brain_region_level_3"] = "Unknown"
-    obs["team"] = SPIKE_IN_ID
-    obs["dataset"] = SPIKE_IN_ID
-    obs["batch_id"] = f"{SPIKE_IN_ID}_" + obs["batch"]
-
-    # Reference labels used by scANVI
-    obs["cell_type"] = obs[SPIKE_IN_CELL_TYPE_KEY].astype(str)
+    obs["team"] = source_id
+    obs["dataset"] = source_id
+    obs["batch_id"] = f"{source_id}_" + obs["batch"]
     obs["is_spike_in"] = True
+    obs["spike_in_source"] = source_id
 
-    print(f"Spike-in AnnData object: {spike_in.n_obs} cells, {spike_in.n_vars} genes")
-    print(f"Spike-in batches ({spike_in.obs['batch_id'].nunique()}): {sorted(spike_in.obs['batch_id'].unique())}")
-    print(f"Spike-in cell types:\n{spike_in.obs['cell_type'].value_counts().to_string()}")
+    print(f"{source_id} spike-in batches ({obs['batch_id'].nunique()}): {sorted(obs['batch_id'].unique())}")
     return spike_in
 
 
-def merge_with_cohort(spike_in: AnnData, cohort: AnnData, n_comps: int) -> AnnData:
+def prep_kamath(spike_in: AnnData, all_genes: pd.DataFrame, norm_target_sum: int) -> AnnData:
     """
-    Merge spike-in cells into the cohort's normalized (HVG-subset) AnnData object with MMC cell type labels
-    and recompute PCA on all cells
+    Kamath et al. 2022 DA neurons; their DA subtype labels train scANVI
     """
-    # Restrict to the cohort's genes; cohort genes missing from the spike-in are set to 0
+    # Keep DA neurons only (cells with a DA subtype label)
+    spike_in = spike_in[spike_in.obs[KAMATH_CELL_TYPE_KEY].notna()].copy()
+    print(f"Kamath DA neurons: {spike_in.n_obs} cells")
+
+    spike_in = format_spike_in(spike_in, all_genes, norm_target_sum, KAMATH_ID, KAMATH_BATCH_KEY)
+
+    # Reference labels used by scANVI
+    spike_in.obs["cell_type"] = spike_in.obs[KAMATH_CELL_TYPE_KEY].astype(str)
+    spike_in.obs["ground_truth_cell_type"] = spike_in.obs["cell_type"]
+
+    print(f"Kamath spike-in AnnData object: {spike_in.n_obs} cells, {spike_in.n_vars} genes")
+    print(f"Kamath cell types:\n{spike_in.obs['cell_type'].value_counts().to_string()}")
+    return spike_in
+
+
+def prep_siletti(spike_in: AnnData, all_genes: pd.DataFrame, norm_target_sum: int) -> AnnData:
+    """
+    Siletti et al. 2023 midbrain cells; unlabeled for scANVI, with Allen labels kept as ground truth for benchmarking
+    """
+    for key in (SILETTI_SUBCLUSTER_KEY, SILETTI_DA_KEY):
+        if key not in spike_in.obs.columns:
+            raise KeyError(f"[ERROR] '{key}' not found in Siletti obs")
+
+    # Ground truth at the cohort's MMC label level: Siletti supercluster, with DA VGLUT2 (Splat_395) as "Dopaminergic"
+    taxonomy = pd.read_csv(SILETTI_TAXONOMY_CSV, index_col="subcluster")
+    supercluster = spike_in.obs[SILETTI_SUBCLUSTER_KEY].astype(str).map(taxonomy["supercluster"])
+    n_unmapped = int(supercluster.isna().sum())
+    if n_unmapped > 0:
+        print(f"[WARNING] {n_unmapped} of {spike_in.n_obs} Siletti cells have no Allen subcluster; ground truth set to 'Unknown'")
+    ground_truth = supercluster.fillna("Unknown").astype(str)
+    ground_truth[spike_in.obs[SILETTI_DA_KEY].astype(bool).values] = DOPAMINERGIC
+    print(f"Siletti midbrain cells: {spike_in.n_obs} cells ({int((ground_truth == DOPAMINERGIC).sum())} {DOPAMINERGIC})")
+
+    spike_in = format_spike_in(spike_in, all_genes, norm_target_sum, SILETTI_ID, SILETTI_BATCH_KEY)
+
+    # Every Siletti cell is held out from scANVI training, so benchmarks use cells scANVI never saw labels for
+    spike_in.obs["ground_truth_cell_type"] = ground_truth.values
+    spike_in.obs["cell_type"] = "Unknown"
+
+    print(f"Siletti spike-in AnnData object: {spike_in.n_obs} cells, {spike_in.n_vars} genes")
+    print(f"Siletti ground truth cell types:\n{spike_in.obs['ground_truth_cell_type'].value_counts().to_string()}")
+    return spike_in
+
+
+def align_to_cohort_genes(spike_in: AnnData, cohort: AnnData) -> AnnData:
+    """
+    Restrict spike-in cells to the cohort's genes; cohort genes missing from the spike-in are set to 0
+    """
+    source_id = spike_in.obs["spike_in_source"].iloc[0]
     missing = cohort.var_names.difference(spike_in.var_names)
-    print(f"Cohort genes missing from spike-in (set to 0): {len(missing)} of {cohort.n_vars}")
+    print(f"Cohort genes missing from {source_id} spike-in (set to 0): {len(missing)} of {cohort.n_vars}")
     if len(missing) > 0:
         filler = AnnData(
             X=sp.csr_matrix((spike_in.n_obs, len(missing)), dtype=spike_in.X.dtype),
@@ -112,14 +169,24 @@ def merge_with_cohort(spike_in: AnnData, cohort: AnnData, n_comps: int) -> AnnDa
     spike_in = spike_in[:, cohort.var_names].copy()
     spike_in.X = sp.csr_matrix(spike_in.X)
     spike_in.layers["counts"] = sp.csr_matrix(spike_in.layers["counts"])
+    return spike_in
+
+
+def merge_with_cohort(spike_ins: list[AnnData], cohort: AnnData, n_comps: int) -> AnnData:
+    """
+    Merge spike-in cells into the cohort's normalized (HVG-subset) AnnData object with MMC cell type labels
+    and recompute PCA on all cells
+    """
+    spike_ins = [align_to_cohort_genes(x, cohort) for x in spike_ins]
 
     cohort.obs["is_spike_in"] = False
-    # Cohort DA neurons mapped by MMC (Siletti) are left unlabeled so scANVI assigns them a spike-in
-    # DA subtype instead of training on the coarse label; MMC's call is kept in obs["phenotype"]
-    cohort_da = cohort.obs["cell_type"].astype(str) == "Dopaminergic"
     cohort.obs["cell_type"] = cohort.obs["cell_type"].astype(str)
-    cohort.obs.loc[cohort_da, "cell_type"] = "Unknown"
-    print(f"Cohort cells labeled Dopaminergic by MMC set to Unknown: {cohort_da.sum()}")
+    if any(x.obs["spike_in_source"].iloc[0] == KAMATH_ID for x in spike_ins):
+        # Cohort DA neurons mapped by MMC (Siletti) are left unlabeled so scANVI assigns them a Kamath
+        # DA subtype instead of training on the coarse label; MMC's call is kept in obs["phenotype"]
+        cohort_da = cohort.obs["cell_type"] == DOPAMINERGIC
+        cohort.obs.loc[cohort_da, "cell_type"] = "Unknown"
+        print(f"Cohort cells labeled {DOPAMINERGIC} by MMC set to Unknown: {cohort_da.sum()}")
     cohort.X = sp.csr_matrix(cohort.X)
     cohort.layers["counts"] = sp.csr_matrix(cohort.layers["counts"])
 
@@ -128,13 +195,14 @@ def merge_with_cohort(spike_in: AnnData, cohort: AnnData, n_comps: int) -> AnnDa
         del cohort.obsm[key]
 
     # Genes are aligned; join="outer" keeps cohort-only (e.g. MMC) and spike-in-only obs columns
-    merged = ad.concat([cohort, spike_in], join="outer", merge="first", uns_merge="first")
+    merged = ad.concat([cohort, *spike_ins], join="outer", merge="first", uns_merge="first")
     merged.var = cohort.var.copy()
 
     # Add PCA of log1p normalized, as in process
     sc.pp.pca(merged, n_comps=n_comps)
 
-    print(f"Merged AnnData object: {merged.n_obs} cells ({spike_in.n_obs} spike-in), {merged.n_vars} genes")
+    n_spike_in = sum(x.n_obs for x in spike_ins)
+    print(f"Merged AnnData object: {merged.n_obs} cells ({n_spike_in} spike-in), {merged.n_vars} genes")
     print(f"Cell types:\n{merged.obs['cell_type'].value_counts().to_string()}")
     return merged
 
@@ -143,13 +211,26 @@ def main(args: argparse.Namespace):
     # Set CPUs to use for parallel computing
     sc.settings.n_jobs = -1
 
-    spike_in = sc.read_h5ad(args.adata_input)
     all_genes = pd.read_csv(args.all_genes_csv, index_col=0)
 
-    spike_in = prep_da_spike_in(spike_in, all_genes, args.norm_target_sum)
+    spike_ins = []
+    if args.kamath_adata is not None:
+        spike_ins.append(prep_kamath(sc.read_h5ad(args.kamath_adata), all_genes, args.norm_target_sum))
+    if args.siletti_adata is not None:
+        spike_ins.append(prep_siletti(sc.read_h5ad(args.siletti_adata), all_genes, args.norm_target_sum))
 
     cohort = sc.read_h5ad(args.adata_cohort)
-    adata = merge_with_cohort(spike_in, cohort, args.n_comps)
+    if args.siletti_adata is not None:
+        # Siletti ground truth is only comparable to scANVI's labels if the cohort was mapped to the Siletti taxonomy
+        siletti_labels = set(spike_ins[-1].obs["ground_truth_cell_type"])
+        cohort_labels = set(cohort.obs["cell_type"].astype(str)) - {"Unknown"}
+        shared = cohort_labels & siletti_labels
+        print(f"Cohort MMC labels shared with Siletti ground truth: {len(shared)} of {len(cohort_labels)}")
+        if len(shared) < len(cohort_labels) / 2:
+            print("[WARNING] Most cohort MMC labels are not Siletti superclusters; was MMC run with the Siletti taxonomy? "
+                  "Siletti benchmarks will not be meaningful")
+
+    adata = merge_with_cohort(spike_ins, cohort, args.n_comps)
 
     adata.write_h5ad(
         filename=args.adata_output,
@@ -159,19 +240,25 @@ def main(args: argparse.Namespace):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Format Kamath et al. 2022 DA neurons and spike them into the cohort's AnnData object with MMC cell type labels"
+        description="Format Kamath et al. 2022 DA neurons and/or Siletti et al. 2023 midbrain cells and spike them into the cohort's AnnData object with MMC cell type labels"
     )
     parser.add_argument(
-        "--adata-input",
+        "--kamath-adata",
         type=str,
-        required=True,
-        help="Kamath et al. 2022 AnnData object with Ensembl IDs as var_names (e.g. kamath_merged_da_all_non_da_13000_postQC.h5ad)",
+        required=False,
+        help="Kamath et al. 2022 AnnData object with Ensembl IDs as var_names (e.g. kamath_merged_da_all_non_da_13000_postQC.h5ad); its DA neurons are spiked in with their DA subtype as scANVI training labels",
+    )
+    parser.add_argument(
+        "--siletti-adata",
+        type=str,
+        required=False,
+        help="Siletti et al. 2023 midbrain AnnData object with Ensembl IDs as var_names and Allen annotations (e.g. midbrain_da_neurons15000_cells47643_postQC.h5ad); all cells are spiked in unlabeled, with Allen labels in obs['ground_truth_cell_type']",
     )
     parser.add_argument(
         "--adata-cohort",
         type=str,
         required=True,
-        help="Cohort's normalized AnnData object with MMC cell type labels to spike DA neurons into",
+        help="Cohort's normalized AnnData object with MMC cell type labels to spike reference cells into",
     )
     parser.add_argument(
         "--all-genes-csv",
@@ -199,4 +286,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    if args.kamath_adata is None and args.siletti_adata is None:
+        parser.error("At least one of --kamath-adata or --siletti-adata is required")
     main(args)

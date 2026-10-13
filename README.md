@@ -62,7 +62,8 @@ The main output is `${cohort_id}.final.h5ad`. Useful contents:
 | `obs["cell_type"]`, `obs["phenotype"]`, `obs["rho"]`, `obs["prob"]` | MapMyCells call, before (`phenotype`) and after (`cell_type`) the confidence threshold |
 | `obs["C_scANVI"]` | scANVI cell type for every cell |
 | `obs["leiden_res_*"]` | Leiden clusters at each resolution |
-| `obs["is_spike_in"]` | `True` for Kamath et al. 2022 reference cells (spike-in runs only); remove these before analyzing your cohort |
+| `obs["is_spike_in"]`, `obs["spike_in_source"]` | `True` for reference cells spiked in from Kamath et al. 2022 or Siletti et al. 2023 (spike-in runs only), with the source in `spike_in_source`; remove these before analyzing your cohort |
+| `obs["ground_truth_cell_type"]` | Reference labels of spike-in cells: Kamath DA subtype, or Siletti supercluster ("Dopaminergic" for DA VGLUT2 neurons). Siletti cells are not used for scANVI training, so comparing this with `C_scANVI` on them benchmarks label transfer |
 | `obsm["X_scVI"]`, `obsm["X_scANVI"]`, `obsm["X_pca_harmony"]`, `obsm["X_umap"]` | Integrated embeddings and UMAP |
 
 AnnData objects are written with LZF compression. They open with `scanpy`/`anndata` (Python) as usual; other readers (e.g. R) need the HDF5 LZF filter plugin.
@@ -138,7 +139,8 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | String | organism | Organism; used to select `workflow_name`. Options: 'human' or 'mouse'. If human, `pmdbs_sc_rnaseq` will be the workflow name (i.e., bucket folder name) and if mouse, `mouse_sc_rnaseq` will be selected. |
 | String | cohort_id | Name of the cohort; used to name output files during cross-team cohort analysis. |
 | Array[[Project](#project)] | projects | The project ID, set of samples and their associated reads and metadata, output bucket locations, and whether or not to run project-level cohort analysis. |
-| File? | kamath_post_qc_adata_object | Downsampled and QC-filtered Kamath et al. 2022 AnnData object (e.g. `kamath_merged_da_all_non_da_13000_postQC.h5ad`; see [sc_tools scripts README](docker/sc_tools/scripts/README.md)). Its dopaminergic (DA) neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels (e.g. SOX6_AGTR1, CALB1_GEM); human only. If not provided, no cells are spiked in. |
+| File? | kamath_post_qc_adata_object | Downsampled and QC-filtered Kamath et al. 2022 AnnData object (e.g. `kamath_merged_da_all_non_da_13000_postQC.h5ad`; see [sc_tools scripts README](docker/sc_tools/scripts/README.md)). Its dopaminergic (DA) neurons are spiked into the cohort's MMC-labeled AnnData object before scVI/scANVI so scANVI can learn DA subtype labels (e.g. SOX6_AGTR1, CALB1_GEM); human only. If not provided, no Kamath cells are spiked in. |
+| File? | siletti_post_qc_adata_object | Downsampled and QC-filtered Siletti et al. 2023 midbrain AnnData object (e.g. `midbrain_da_neurons15000_cells47643_postQC.h5ad`; see [sc_tools scripts README](docker/sc_tools/scripts/README.md)). All its cells are spiked in unlabeled, with Allen Brain Cell Atlas labels kept in `obs['ground_truth_cell_type']` to benchmark scANVI predictions (`${cohort_id}.spike_in_benchmark.csv`); human only, and only meaningful when `mmc_taxonomy` is 'Siletti'. If not provided, no Siletti cells are spiked in. |
 | File | cellranger_reference_data | Cellranger transcriptome reference data; see https://www.10xgenomics.com/support/software/cell-ranger/downloads/previous-versions and [Cell Ranger references](#cell-ranger-references). |
 | Float? | cellbender_fpr | Cellbender false positive rate for signal removal. [0.0] |
 | Int? | n_cells | Number of cells to keep. Cells are drawn uniformly at random without replacement for downsampling. Default is to keep all cells. |
@@ -338,6 +340,7 @@ asap-dev-{cohort,team-xxyy}-{source}-{modality_flavour}-{context}
             │   ├── ${cohort_id}.final_metadata.csv
             │   ├── ${cohort_id}.scib_report.csv
             │   ├── ${cohort_id}.scib_results.svg
+            │   ├── ${cohort_id}.spike_in_benchmark.csv  // only if Siletti cells were spiked in
             │   ├── ${cohort_id}.features.umap.png
             │   ├── ${cohort_id}.groups.umap.png
             │   └── MANIFEST.tsv
