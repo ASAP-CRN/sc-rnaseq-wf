@@ -17,6 +17,7 @@
 
 - _filtering_: [`filter`](./main/filter)
     - QC filtering
+    - Saves every removed cell (barcode, sample metadata, QC metrics) with one column per filter it failed (e.g. `failed_n_genes_by_counts_mad_upper`) to `${cohort_id}.filtered_out_cells.csv`
 
 
 ## _PROCESSING_

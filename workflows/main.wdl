@@ -241,6 +241,7 @@ workflow sc_rnaseq_analysis {
 		Array[File?] project_qc_initial_metadata_downsampled_csv = project_cohort_analysis.qc_initial_metadata_downsampled_csv
 		Array[Array[File]?] project_qc_plots_downsampled_png = project_cohort_analysis.qc_plots_downsampled_png
 		Array[File?] project_filtered_adata_object = project_cohort_analysis.filtered_adata_object
+		Array[File?] project_filtered_out_cells_csv = project_cohort_analysis.filtered_out_cells_csv
 		Array[File?] project_mmc_extended_results_json = project_cohort_analysis.mmc_extended_results_json
 		Array[File?] project_mmc_results_csv = project_cohort_analysis.mmc_results_csv
 		Array[File?] project_mmc_log_txt = project_cohort_analysis.mmc_log_txt
@@ -284,6 +285,7 @@ workflow sc_rnaseq_analysis {
 		File? cohort_qc_initial_metadata_downsampled_csv = cross_team_cohort_analysis.qc_initial_metadata_downsampled_csv
 		Array[File]? cohort_qc_plots_downsampled_png = cross_team_cohort_analysis.qc_plots_downsampled_png
 		File? cohort_filtered_adata_object = cross_team_cohort_analysis.filtered_adata_object
+		File? cohort_filtered_out_cells_csv = cross_team_cohort_analysis.filtered_out_cells_csv
 		File? cohort_mmc_extended_results_json = cross_team_cohort_analysis.mmc_extended_results_json
 		File? cohort_mmc_results_csv = cross_team_cohort_analysis.mmc_results_csv
 		File? cohort_mmc_log_txt = cross_team_cohort_analysis.mmc_log_txt

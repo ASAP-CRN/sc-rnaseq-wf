@@ -77,6 +77,9 @@
                 "n_genes_by_counts_limits": "${n_genes_by_counts_limits}",
                 "n_mads_lower": "${n_mads_lower}",
                 "n_mads_upper": "${n_mads_upper}",
+                "raw_data_path": "${cohort_raw_data_path}",
+                "workflow_info": "${workflow_info}",
+                "billing_project": "${billing_project}",
                 "container_registry": "${container_registry}",
                 "zones": "${zones}"
               },
@@ -86,6 +89,15 @@
                   "test_tasks": [
                     "compare_file_basename",
                     "check_hdf5"
+                  ]
+                },
+                "filtered_out_cells_csv": {
+                  "value": "${input_resources_file_path}/${cohort_workflow_name}/${cohort_id}.filtered_out_cells.csv",
+                  "test_tasks": [
+                    "compare_file_basename",
+                    "check_empty_lines",
+                    "check_comma_separated",
+                    "count_columns"
                   ]
                 }
               }

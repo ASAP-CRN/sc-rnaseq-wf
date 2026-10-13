@@ -291,6 +291,7 @@ asap-dev-{cohort,team-xxyy}-{source}-{modality_flavour}-{context}
             │   ├── ${cohort_id}.pct_counts_mt.violin.png
             │   ├── ${cohort_id}.pct_counts_rb.violin.png
             │   ├── ${cohort_id}.total_counts.violin.png
+            │   ├── ${cohort_id}.filtered_out_cells.csv
             │   ├── ${cohort_id}.{mmc_otf_mapping.SEAAD,mmc_markers_mapping}.extended_results.json
             │   ├── ${cohort_id}.{mmc_otf_mapping.SEAAD,mmc_markers_mapping}.results.csv
             │   ├── ${cohort_id}.{mmc_otf_mapping.SEAAD,mmc_markers_mapping}.log.txt

@@ -115,6 +115,9 @@ workflow cohort_analysis {
 			n_genes_by_counts_limits = n_genes_by_counts_limits,
 			n_mads_lower = n_mads_lower,
 			n_mads_upper = n_mads_upper,
+			raw_data_path = raw_data_path,
+			workflow_info = workflow_info,
+			billing_project = billing_project,
 			container_registry = container_registry,
 			zones = zones
 	}
@@ -256,6 +259,9 @@ workflow cohort_analysis {
 		merge_and_plot_qc_metrics.qc_plots_png,
 		select_first([qc_plots_downsampled_png_paths, []]),
 		[
+			filter.filtered_out_cells_csv
+		],
+		[
 			map_cell_types.mmc_extended_results_json,
 			map_cell_types.mmc_results_csv,
 			map_cell_types.mmc_log_txt
@@ -306,6 +312,7 @@ workflow cohort_analysis {
 		File? qc_initial_metadata_downsampled_csv = qc_initial_metadata_downsampled_csv_path #!FileCoercion
 		Array[File]? qc_plots_downsampled_png = qc_plots_downsampled_png_paths #!FileCoercion
 		File filtered_adata_object = filter.filtered_adata_object
+		File filtered_out_cells_csv = filter.filtered_out_cells_csv #!FileCoercion
 		File mmc_extended_results_json = map_cell_types.mmc_extended_results_json #!FileCoercion
 		File mmc_results_csv = map_cell_types.mmc_results_csv #!FileCoercion
 		File mmc_log_txt = map_cell_types.mmc_log_txt #!FileCoercion
@@ -519,6 +526,9 @@ task filter {
 		Float n_mads_lower
 		Float n_mads_upper
 
+		String raw_data_path
+		Array[Array[String]] workflow_info
+		String billing_project
 		String container_registry
 		String zones
 	}
@@ -539,11 +549,19 @@ task filter {
 			--n-genes-by-counts-limits ~{sep=' ' n_genes_by_counts_limits} \
 			--n-mads-lower ~{n_mads_lower} \
 			--n-mads-upper ~{n_mads_upper} \
-			--adata-output ~{cohort_id}.filtered.h5ad
+			--adata-output ~{cohort_id}.filtered.h5ad \
+			--output-removed-cells-file ~{cohort_id}.filtered_out_cells.csv
+
+		upload_outputs \
+			-b ~{billing_project} \
+			-d ~{raw_data_path} \
+			-i ~{write_tsv(workflow_info)} \
+			-o "~{cohort_id}.filtered_out_cells.csv"
 	>>>
 
 	output {
 		File filtered_adata_object = "~{cohort_id}.filtered.h5ad"
+		String filtered_out_cells_csv = "~{raw_data_path}/~{cohort_id}.filtered_out_cells.csv"
 	}
 
 	runtime {
@@ -558,7 +576,7 @@ task filter {
 	}
 
 	meta {
-		description: "Filters low-quality cells from the merged AnnData object based on mitochondrial content, doublet score, total UMI counts, and number of detected genes. UMI count and detected gene thresholds combine absolute limits with per-sample median absolute deviation (MAD) cutoffs."
+		description: "Filters low-quality cells from the merged AnnData object based on mitochondrial content, doublet score, total UMI counts, and number of detected genes. UMI count and detected gene thresholds combine absolute limits with per-sample median absolute deviation (MAD) cutoffs. Lists every removed cell and the filters it failed."
 	}
 
 	parameter_meta {
@@ -570,6 +588,9 @@ task filter {
 		n_genes_by_counts_limits: {help: "Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 15000]"}
 		n_mads_lower: {help: "Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3]"}
 		n_mads_upper: {help: "Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5]"}
+		raw_data_path: {help: "Raw data bucket path for removed cells output; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
+		workflow_info: {help: "UTC timestamp, workflow name, workflow version, and GitHub release; stored in the file-level manifest and final manifest with all saved files."}
+		billing_project: {help: "Billing project to charge GCP costs."}
 		container_registry: {help: "Container registry where workflow Docker images are hosted."}
 		zones: {help: "Space-delimited set of GCP zones to spin up compute in. ['us-central1-c us-central1-f']"}
 	}
