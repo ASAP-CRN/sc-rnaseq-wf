@@ -21,7 +21,7 @@ Common workflows, tasks, utility scripts, and docker images reused across harmon
 
 This workflow gives a **harmonized first pass** over all ASAP sc/sn RNA-seq samples. It is meant to help you decide **whether a meta-analysis is worth running, and how**. It is not the final analysis of any dataset. Treat the cell type labels in particular as a starting point:
 
-- **Cell types are reference-based and coarse.** Cells are mapped to an Allen Brain Cell Atlas taxonomy with [MapMyCells](https://brain-map.org/bkp/analyze/mapmycells). Only confident calls (correlation and bootstrap probability ≥ 0.5) are kept as `cell_type`; all others are `Unknown`. scANVI then assigns a label to every cell (`C_scANVI`) based on those confident calls.
+- **Cell types are reference-based and coarse.** Cells are mapped to an Allen Brain Cell Atlas taxonomy with [MapMyCells](https://brain-map.org/bkp/analyze/mapmycells). Only confident calls (correlation and bootstrap probability ≥ 0.5) are kept as `cell_type`; all others are `Unknown`. [scANVI](https://docs.scvi-tools.org/en/stable/user_guide/models/scanvi.html) then assigns a label to every cell (`C_scANVI`) based on those confident calls.
 - **Labels depend on the reference.** Siletti has a single DA cluster. DA subtypes (e.g. `SOX6_AGTR1`) only appear if the Kamath et al. 2022 spike-in is used. Brain regions or cell types that are rare or missing in the reference will be mislabeled or `Unknown`.
 - **Check before you build on it.** Use the outputs to answer:
     - Are QC metrics comparable across teams and samples (QC violin plots, `final_metadata.csv`)?
@@ -46,7 +46,7 @@ Default QC filters (applied per cell, after merging):
 | :- | :- |
 | Mitochondrial counts (`pct_counts_mt`) | ≤ 10% |
 | Doublet score (scrublet, per sample) | ≤ 0.2 |
-| Total UMI counts | 500–150,000, and within 3 MADs below / 5 MADs above the per-sample median |
+| Total UMI counts | 500–150,000, and within 3 median absolute deviations (MADs) below / 5 MADs above the per-sample median |
 | Genes detected | 300–15,000, and within 3 MADs below / 5 MADs above the per-sample median |
 | Downsampling (`n_cells`) | None; all cells kept |
 | Cell type confidence (MapMyCells) | correlation ≥ 0.5 and bootstrap probability ≥ 0.5, otherwise `Unknown` |
@@ -95,12 +95,12 @@ If you process the data yourself instead of (or after) using this workflow, cons
 - **Plan for scale.** Memory scales with the number of cells; a cohort of several million cells needs hundreds of GB of RAM for merging and QC, and a GPU for scVI/scANVI, clustering and Harmony.
     - Subsample (e.g. to 500,000 cells) for integration metrics such as `scib-metrics`; computing them on all cells can take days.
     - Lower the learning rate and use gradient clipping when training scVI/scANVI on very large cohorts to avoid the training diverging to NaN.
-    - GPU libraries such as rapids-singlecell do not support older GPUs (e.g. NVIDIA V100); check compatibility before choosing a machine type.
+    - GPU libraries such as [rapids-singlecell](https://github.com/scverse/rapids-singlecell) do not support older GPUs (e.g. NVIDIA V100); check compatibility before choosing a machine type.
 - **Downsample to explore.** Set `n_cells` to try parameters on a random subset before running the full cohort.
 
 # Workflows
 
-Worfklows are defined in [the `workflows` directory](workflows). The python scripts which process the data at each stage can be found [the docker/sc_tools/scripts directory](docker/sc_tools/scripts).
+Worfklows are defined in [the `workflows` directory](workflows). The python scripts which process the data at each stage can be found in [the docker/sc_tools/scripts directory](docker/sc_tools/scripts).
 
 Workflow names:
 - `pmdbs_sc_rnaseq`
@@ -144,9 +144,9 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | Int? | doublet_score_max | Maximum doublet detection score threshold. [0.2] |
 | Array[Int]? | total_counts_limits | Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000] |
 | Array[Int]? | n_genes_by_counts_limits | Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 15000] |
-| Float? | n_mads_lower | Number of median absolute deviations below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3] |
-| Float? | n_mads_upper | Number of median absolute deviations above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5] |
-| String | mmc_taxonomy | Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are 'SEAAD' (human), 'Siletti' (human), or 'ABC' (mouse). |
+| Float? | n_mads_lower | Number of MADs below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3] |
+| Float? | n_mads_upper | Number of MADs above the per-sample median allowed for total UMI counts and number of genes detected per cell. [5] |
+| String | mmc_taxonomy | Cell type taxonomy of the precomputed stats reference; appended to MMC output filenames. Must match allen_brain_mmc_precomputed_stats_h5. Options are `SEAAD` (human, [SEA-AD](https://brain-map.org/consortia/sea-ad)), `Siletti` (human, [Allen WHB-10Xv3 taxonomy](https://allen-brain-cell-atlas.s3.us-west-2.amazonaws.com/index.html#mapmycells/WHB-10Xv3/20240831/)), or `ABC` (mouse, [WMB-10X](https://allen-brain-cell-atlas.s3.us-west-2.amazonaws.com/index.html#mapmycells/WMB-10X/20240831/.)). |
 | File? | allen_brain_mmc_precomputed_stats_h5 | A precomputed statistics file from the Allen Brain Cell Atlas containing reference statistics (the average gene expression profile per cell type cluster and cell type taxonomy); see [Allen Brain Institute's MapMyCells references](#allen-brain-institutes-mapmycells-references). |
 | File? | allen_brain_mmc_marker_genes_json | A text file that contains the JSON serialization of a dict file from the Allen Brain Cell Atlas specifying which marker genes to use at which node in the cell type taxonomy. Currently, only used when processing mouse data; see [Allen Brain Institute's MapMyCells references](#allen-brain-institutes-mapmycells-references). |
 | Int? | norm_target_sum | The total count value that each cell will be normalized to. [10000] |
