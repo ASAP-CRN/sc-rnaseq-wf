@@ -21,7 +21,7 @@ Common workflows, tasks, utility scripts, and docker images reused across harmon
 
 This workflow gives a **harmonized first pass** over all ASAP sc/sn RNA-seq samples. It is meant to help you decide **whether a meta-analysis is worth running, and how**. It is not the final analysis of any dataset. Treat the cell type labels in particular as a starting point:
 
-- **Cell types are reference-based and coarse.** Cells are mapped to an Allen Brain Cell Atlas taxonomy with [MapMyCells](https://brain-map.org/bkp/analyze/mapmycells). Only confident calls (correlation and bootstrap probability ≥ 0.5) are kept as `cell_type`; all others are `Unknown`. scANVI then assigns a label to every cell (`C_scANVI`) based on those confident calls.
+- **Cell types are reference-based and coarse.** Cells are mapped to an Allen Brain Cell Atlas taxonomy with [MapMyCells](https://brain-map.org/bkp/analyze/mapmycells). Only confident calls (correlation and bootstrap probability ≥ 0.5) are kept as `cell_type`; all others are `Unknown`. [scANVI](https://docs.scvi-tools.org/en/stable/user_guide/models/scanvi.html) then assigns a label to every cell (`C_scANVI`) based on those confident calls.
 - **Labels depend on the reference.** Siletti has a single DA cluster. DA subtypes (e.g. `SOX6_AGTR1`) only appear if the Kamath et al. 2022 spike-in is used. Brain regions or cell types that are rare or missing in the reference will be mislabeled or `Unknown`.
 - **Check before you build on it.** Use the outputs to answer:
     - Are QC metrics comparable across teams and samples (QC violin plots, `final_metadata.csv`)?
