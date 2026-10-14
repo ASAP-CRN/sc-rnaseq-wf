@@ -12,7 +12,7 @@ ipynb_checkpoints/*
 *.ipynb
 
 # Python files
-__pycache__/*
+**/__pycache__/*
 
 # Env files
 **/.env

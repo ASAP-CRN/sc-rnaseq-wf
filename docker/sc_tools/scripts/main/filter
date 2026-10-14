@@ -4,50 +4,153 @@
 # import muon as mu
 import scanpy as sc
 import argparse
+import numpy as np
 import pandas as pd
 import sys
 from anndata import AnnData
+from scipy.stats import median_abs_deviation
 
 sys.path.append("/opt/scripts/utility")
 from helpers import update_validation_metrics
 
 
-def filter_adata(adata_fname: str) -> AnnData:
+def mad_outlier(
+    values: np.ndarray, n_mads_lower: float, n_mads_upper: float
+) -> tuple[np.ndarray, np.ndarray, float, float]:
+    """Flag values outside [median - n_mads_lower * MAD, median + n_mads_upper * MAD].
+
+    MADs are computed on the log1p scale because UMI and gene counts are right-skewed;
+    under an approximately normal distribution 3 MADs covers ~99% of the data. The two
+    bounds are separate because high counts are usually fine, so only the extreme high
+    tail is trimmed.
+
+    Returns the below-lower and above-upper outlier masks plus the lower and upper
+    thresholds in count units.
+    """
+    log_values = np.log1p(values.astype(float))
+    median = np.median(log_values)
+    mad = median_abs_deviation(log_values)
+
+    if mad == 0:
+        # Degenerate spread (e.g. very few cells, or near-identical counts); the bounds
+        # would collapse onto the median and drop roughly half the cells. Fall back to
+        # the absolute limits alone.
+        no_outliers = np.zeros(log_values.shape, dtype=bool)
+        return no_outliers, no_outliers.copy(), np.nan, np.nan
+
+    lower = median - n_mads_lower * mad
+    upper = median + n_mads_upper * mad
+    return log_values < lower, log_values > upper, float(np.expm1(lower)), float(np.expm1(upper))
+
+
+def mad_outlier_by_group(
+    obs: pd.DataFrame, metric: str, group_key: str, n_mads_lower: float, n_mads_upper: float
+) -> tuple[pd.Series, pd.Series]:
+    """Apply `mad_outlier` to `metric` within each group of `group_key`.
+
+    Sequencing depth varies between samples, so a cohort-wide median would over-filter
+    shallow samples and under-filter deep ones; thresholds are derived per group.
+
+    Returns the below-lower and above-upper outlier masks.
+    """
+    low = pd.Series(False, index=obs.index)
+    high = pd.Series(False, index=obs.index)
+
+    if group_key is None:
+        low_mask, high_mask, lower, upper = mad_outlier(obs[metric].to_numpy(), n_mads_lower, n_mads_upper)
+        low.loc[:] = low_mask
+        high.loc[:] = high_mask
+        print(f"----         {metric}: cohort-wide thresholds [{lower:.1f}, {upper:.1f}]; {low_mask.sum()} low, {high_mask.sum()} high outliers")
+        return low, high
+
+    for group, index in obs.groupby(group_key, observed=True).groups.items():
+        low_mask, high_mask, lower, upper = mad_outlier(
+            obs.loc[index, metric].to_numpy(), n_mads_lower, n_mads_upper
+        )
+        low.loc[index] = low_mask
+        high.loc[index] = high_mask
+        if np.isnan(lower):
+            print(f"----         {metric} [{group}]: MAD is 0; absolute limits only")
+        else:
+            print(f"----         {metric} [{group}]: thresholds [{lower:.1f}, {upper:.1f}]; {low_mask.sum()} low, {high_mask.sum()} high outliers of {len(index)}")
+
+    return low, high
+
+
+def filter_adata(adata_fname: str) -> tuple[AnnData, pd.DataFrame]:
     print(f"----load adata")
 
     # 0. Load data
     adata_backed = sc.read_h5ad(args.adata_input, backed='r')  # type: ignore
     print(f"read {args.adata_input}")
 
+    obs = adata_backed.obs
+
+    group_key = args.mad_group_key
+    if group_key is not None and group_key not in obs.columns:
+        print(f"[WARNING] '{group_key}' not found in obs; computing MADs cohort-wide")
+        group_key = None
+
     # Step 2: Choose your filter condition on the `.obs` or `.var` (must be present in backed mode)
     # For example, filter cells with a certain metadata label
     # muon api is better than the scanpyt api for this...
     # mu.pp.filter_obs(adata, "pct_counts_mt", lambda x: x <= pct_counts_mt_max)
     print(f"----filter 1: pct_counts_mt_max")
-    keep_mt = adata_backed.obs['pct_counts_mt'] <= args.pct_counts_mt_max
+    keep_mt = obs['pct_counts_mt'] <= args.pct_counts_mt_max
 
     print(f"----   filter 2: doublet_score_max")
     # mu.pp.filter_obs(adata, "doublet_score", lambda x: x < doublet_score_max)
-    keep_doublet = adata_backed.obs['doublet_score'] < args.doublet_score_max
+    keep_doublet = obs['doublet_score'] < args.doublet_score_max
 
-    print(f"----      filter 3: total_counts_limits")
-    # mu.pp.filter_obs(
-    #     adata,
-    #     "total_counts",
-    #     lambda x: (x >= total_counts_limits[0]) & (x <= total_counts_limits[1]),
-    # )
-    keep_total_counts = (adata_backed.obs['total_counts'] >= args.total_counts_limits[0]) & (adata_backed.obs['total_counts'] <= args.total_counts_limits[1])
+    print(f"----      filter 3: total_counts (absolute limits + {args.n_mads_lower}/{args.n_mads_upper} MADs)")
+    total_counts_mad_low, total_counts_mad_high = mad_outlier_by_group(
+        obs, 'total_counts', group_key, args.n_mads_lower, args.n_mads_upper
+    )
+    keep_total_counts = (
+        (obs['total_counts'] >= args.total_counts_limits[0])
+        & (obs['total_counts'] <= args.total_counts_limits[1])
+        & ~total_counts_mad_low
+        & ~total_counts_mad_high
+    )
 
-    print(f"----         filter 4: n_genes_by_counts_limits")
-    # mu.pp.filter_obs(
-    #     adata,
-    #     "n_genes_by_counts",
-    #     lambda x: (x >= n_genes_by_counts_limits[0])
-    #     & (x <= n_genes_by_counts_limits[1]),
-    # )
-    keep_n_genes_by_counts = (adata_backed.obs['n_genes_by_counts'] >= args.n_genes_by_counts_limits[0]) & (adata_backed.obs['n_genes_by_counts'] <= args.n_genes_by_counts_limits[1])
+    print(f"----         filter 4: n_genes_by_counts (absolute limits + {args.n_mads_lower}/{args.n_mads_upper} MADs)")
+    n_genes_mad_low, n_genes_mad_high = mad_outlier_by_group(
+        obs, 'n_genes_by_counts', group_key, args.n_mads_lower, args.n_mads_upper
+    )
+    keep_n_genes_by_counts = (
+        (obs['n_genes_by_counts'] >= args.n_genes_by_counts_limits[0])
+        & (obs['n_genes_by_counts'] <= args.n_genes_by_counts_limits[1])
+        & ~n_genes_mad_low
+        & ~n_genes_mad_high
+    )
 
     keep_cells = keep_mt & keep_doublet & keep_total_counts & keep_n_genes_by_counts
+    print(f"keeping {keep_cells.sum()}/{len(keep_cells)} cells")
+
+    # Record every removed cell and each filter it failed (a cell can fail several), so removed cells
+    # can be checked for over-represented cell types (e.g. by mapping them with the scVI/scANVI models)
+    failed = pd.DataFrame(
+        {
+            "failed_pct_counts_mt_max": ~keep_mt,
+            "failed_doublet_score_max": ~keep_doublet,
+            "failed_total_counts_min": obs['total_counts'] < args.total_counts_limits[0],
+            "failed_total_counts_max": obs['total_counts'] > args.total_counts_limits[1],
+            "failed_total_counts_mad_lower": total_counts_mad_low,
+            "failed_total_counts_mad_upper": total_counts_mad_high,
+            "failed_n_genes_by_counts_min": obs['n_genes_by_counts'] < args.n_genes_by_counts_limits[0],
+            "failed_n_genes_by_counts_max": obs['n_genes_by_counts'] > args.n_genes_by_counts_limits[1],
+            "failed_n_genes_by_counts_mad_lower": n_genes_mad_low,
+            "failed_n_genes_by_counts_mad_upper": n_genes_mad_high,
+        },
+        index=obs.index,
+    )
+    metadata_cols = [
+        x for x in ["sample", "batch_id", "team", "dataset", "brain_region_level_1",
+                    "pct_counts_mt", "doublet_score", "total_counts", "n_genes_by_counts"]
+        if x in obs.columns
+    ]
+    removed_cells = pd.concat([obs[metadata_cols], failed], axis=1)[~keep_cells]
+    print(f"Removed cells per filter (a cell can fail several):\n{failed[~keep_cells].sum().to_string()}")
 
     # Step 3: Read the filtered subset into memory
     print(f"APPLY FILTER")
@@ -56,7 +159,7 @@ def filter_adata(adata_fname: str) -> AnnData:
     # Step 4: Optional - Close the backed object to release file handles
     adata_backed.file.close()
 
-    return adata_filtered
+    return adata_filtered, removed_cells
 
 
 def main(args: argparse.Namespace):
@@ -64,12 +167,14 @@ def main(args: argparse.Namespace):
     sc.settings.n_jobs = -1
 
     # 1. Filter data
-    adata = filter_adata(args.adata_input)
+    adata, removed_cells = filter_adata(args.adata_input)
     print(f"---- filtered -----")
 
-    # 2. Save the filtered adata
-    adata.write_h5ad(filename=args.adata_output, compression="gzip")
+    # 2. Save the filtered adata and the removed cells
+    adata.write_h5ad(filename=args.adata_output, compression="lzf")
     print(f"wrote {args.adata_output}")
+    removed_cells.to_csv(args.output_removed_cells_file, index=True, index_label="barcode")
+    print(f"wrote {args.output_removed_cells_file}")
 
 
 if __name__ == "__main__":
@@ -97,14 +202,32 @@ if __name__ == "__main__":
         type=int,
         nargs="+",
         required=True,
-        help="Minimum and maximum total UMI (unique molecular identifier) counts per cell [100, 100000]"
+        help="Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell [500, 150000]"
     )
     parser.add_argument(
         "--n-genes-by-counts-limits",
         type=int,
         nargs="+",
         required=True,
-        help="Minimum and maximum number of genes detected per cell (genes with at least one count) [100, 10000]"
+        help="Absolute minimum and maximum number of genes detected per cell (genes with at least one count) [300, 15000]"
+    )
+    parser.add_argument(
+        "--n-mads-lower",
+        type=float,
+        default=3,
+        help="Number of median absolute deviations below the median allowed for total_counts and n_genes_by_counts [3]"
+    )
+    parser.add_argument(
+        "--n-mads-upper",
+        type=float,
+        default=5,
+        help="Number of median absolute deviations above the median allowed for total_counts and n_genes_by_counts [5]"
+    )
+    parser.add_argument(
+        "--mad-group-key",
+        type=str,
+        default="sample",
+        help="Key in obs to compute MAD thresholds within; 'none' computes them cohort-wide [sample]"
     )
     parser.add_argument(
         "--adata-output",
@@ -112,6 +235,14 @@ if __name__ == "__main__":
         required=True,
         help="Output file to save AnnData object to",
     )
+    parser.add_argument(
+        "--output-removed-cells-file",
+        type=str,
+        required=True,
+        help="Output CSV listing every removed cell (barcode), its sample metadata and QC metrics, and which filters it failed",
+    )
 
     args = parser.parse_args()
+    if args.mad_group_key.lower() == "none":
+        args.mad_group_key = None
     main(args)

@@ -12,8 +12,6 @@ ARG IMAGE_NAME
 ENV IMAGE_NAME "${IMAGE_NAME}"
 ARG IMAGE_TAG
 ENV IMAGE_TAG "${IMAGE_TAG}"
-ARG JAX_VERSION
-ENV JAX_VERSION "${JAX_VERSION}"
 
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -59,22 +57,22 @@ RUN cd /opt/Python-${PYTHON3_VERSION} \
 RUN update-alternatives --install /usr/bin/python3 python3 /opt/Python-${PYTHON3_VERSION}/python 1 \
 	&& update-alternatives --set python3 /opt/Python-${PYTHON3_VERSION}/python
 
-# Cell Type Mapper
+# constraints.txt pins every transitive dependency so the GPU stack (torch, jax, RAPIDS) resolves the same way on every build
+# RAPIDS (cuml, cugraph, cudf) is served from NVIDIA's index
+COPY ./requirements.txt /opt/requirements.txt
+COPY ./constraints.txt /opt/constraints.txt
+RUN python3 -m pip install --no-cache-dir --upgrade pip \
+	&& python3 -m pip install --no-cache-dir --prefer-binary \
+		--extra-index-url https://pypi.nvidia.com \
+		-r /opt/requirements.txt \
+		-c /opt/constraints.txt
+
+# Cell Type Mapper; installed against the same constraints so it cannot change the pinned versions
 ARG CELL_TYPE_MAPPER_VERSION
 ENV CELL_TYPE_MAPPER_VERSION "${CELL_TYPE_MAPPER_VERSION}"
 RUN git clone --branch v${CELL_TYPE_MAPPER_VERSION} https://github.com/AllenInstitute/cell_type_mapper.git \
 	&& cd cell_type_mapper \
-	&& python3 -m pip install -e .
-
-COPY ./requirements.txt /opt/requirements.txt
-RUN python3 -m pip cache purge
-RUN python3 -m pip install -r /opt/requirements.txt
-
-# CUDA-enabled jaxlib is needed
-RUN python3 -m pip install --upgrade "jax[cuda12_pip]==${JAX_VERSION}" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-
-# Torch version 2.6.0 needs libcudnn.so.9
-RUN python3 -m pip install nvidia-cudnn-cu12==9.1.0.70
+	&& python3 -m pip install --no-cache-dir -c /opt/constraints.txt -e .
 
 COPY --from=scripts /opt/scripts /opt/scripts
 COPY scripts /opt/scripts

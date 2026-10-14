@@ -2,18 +2,13 @@
 
 import argparse
 import scanpy as sc
+import rapids_singlecell as rsc
 from anndata import AnnData
 
 
 def add_harmony(adata: AnnData):
-    """
-    Adds Harmony integration to AnnData object in place
-    """
-    # Set CPUs to use for parallel computing
-    sc.settings.n_jobs = -1
-
     print("Running Harmony integration")
-    sc.external.pp.harmony_integrate(adata, args.batch_key)
+    rsc.pp.harmony_integrate(adata, args.batch_key, flavor="harmony1")
 
 
 def main(args: argparse.Namespace):
@@ -22,7 +17,7 @@ def main(args: argparse.Namespace):
     add_harmony(adata)
 
     # 9. Save the adata
-    adata.write_h5ad(filename=args.adata_output, compression="gzip")
+    adata.write_h5ad(filename=args.adata_output, compression="lzf")
 
     # Save metadata
     metatable = adata.obs

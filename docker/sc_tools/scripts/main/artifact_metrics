@@ -3,6 +3,8 @@
 import argparse
 import scanpy as sc
 import numpy as np
+import pandas as pd
+from sklearn.metrics import precision_recall_fscore_support
 from scib_metrics.benchmark import Benchmarker, BatchCorrection, BioConservation
 from scib_metrics.nearest_neighbors import NeighborsResults
 from pathlib import Path
@@ -29,6 +31,43 @@ def batch_metrics_are_defined(adata: AnnData, batch_key: str, label_key: str) ->
             return True
 
     return False
+
+
+def get_spike_in_benchmark(adata: AnnData, label_key: str) -> DataFrame:
+    """Score scANVI predictions on held-out Siletti spike-in cells against their Allen ground truth.
+
+    Siletti cells are spiked in unlabeled (cell_type 'Unknown'), so scANVI never trains on their labels.
+    Kamath DA subtype predictions are collapsed to 'Dopaminergic' to match Siletti's DA VGLUT2 ground truth.
+    Returns per-label precision, recall, F1 and support, plus macro and weighted averages.
+    """
+    obs = adata.obs
+    siletti = (obs["spike_in_source"].astype(str) == "siletti").to_numpy()
+    truth = obs.loc[siletti, "ground_truth_cell_type"].astype(str)
+    pred = obs.loc[siletti, label_key].astype(str)
+
+    kamath = (obs["spike_in_source"].astype(str) == "kamath").to_numpy()
+    da_subtypes = set(obs.loc[kamath, "cell_type"].astype(str))
+    pred = pred.where(~pred.isin(da_subtypes), "Dopaminergic")
+
+    # Cells without an Allen subcluster have no ground truth to score
+    scored = truth != "Unknown"
+    truth, pred = truth[scored], pred[scored]
+    print(f"Scoring {len(truth)} held-out Siletti cells ({(~scored).sum()} without ground truth skipped)")
+
+    labels = sorted(set(truth))
+    precision, recall, f1, support = precision_recall_fscore_support(
+        truth, pred, labels=labels, zero_division=0
+    )
+    report = pd.DataFrame(
+        {"precision": precision, "recall": recall, "f1": f1, "support": support},
+        index=pd.Index(labels, name="ground_truth_cell_type"),
+    )
+    for average in ("macro", "weighted"):
+        p, r, f, _ = precision_recall_fscore_support(truth, pred, labels=labels, average=average, zero_division=0)
+        report.loc[f"{average}_avg"] = [p, r, f, len(truth)]
+    print(report.to_string())
+
+    return report
 
 
 def get_artifact_metrics(
@@ -71,6 +110,16 @@ def get_artifact_metrics(
 def main(args: argparse.Namespace):
     adata = sc.read_h5ad(args.adata_input)  # type: ignore
 
+    # Benchmark on all held-out Siletti spike-in cells, before subsampling for scib metrics
+    if args.output_spike_in_benchmark_file is not None:
+        if "ground_truth_cell_type" not in adata.obs.columns or not (adata.obs["spike_in_source"].astype(str) == "siletti").any():
+            raise ValueError("[ERROR] --output-spike-in-benchmark-file requires Siletti spike-in cells with obs['ground_truth_cell_type']")
+        benchmark_df = get_spike_in_benchmark(adata, args.predictions_key)
+        benchmark_df.to_csv(args.output_spike_in_benchmark_file, index=True)
+
+    if adata.n_obs > 500_000:
+        adata = sc.pp.sample(adata, n=500_000, rng=42, copy=True)
+
     # Save the results
     report_dir = Path.cwd() / args.output_report_dir
     if not report_dir.exists():
@@ -107,6 +156,12 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="Output folder to save `scib` report",
+    )
+    parser.add_argument(
+        "--output-spike-in-benchmark-file",
+        type=str,
+        required=False,
+        help="Output CSV for per-label precision, recall and F1 of scANVI predictions on held-out Siletti spike-in cells; only when Siletti cells were spiked in",
     )
 
     args = parser.parse_args()

@@ -53,13 +53,15 @@ def main(args: argparse.Namespace):
 
     if args.mmc_marker_genes:
         print("Running FromSpecifiedMarkersRunner")
-        config["type_assignment"]["n_processors"] = args.n_processors # Force tool to only use CPUs specified in WDL regardless of available CPUs
+        config["type_assignment"]["n_processors"] = args.n_processors # Force tool to only use 4 CPUs specified in WDL regardless of available CPUs
         config["query_markers"] = {
             "serialized_lookup": args.mmc_marker_genes
         }
         runner = FromSpecifiedMarkersRunner(args=[], input_data=config)
     else:
         print("Running OnTheFlyMapper")
+        # OnTheFlyMapper reads a top-level n_processors (default 32) and overrides type_assignment.n_processors with it
+        config["n_processors"] = args.n_processors
         config["reference_markers"] = {
             "log2_fold_min_th": 0.5
         }
