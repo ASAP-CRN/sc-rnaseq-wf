@@ -127,6 +127,8 @@ Run once per sample; only rerun when the preprocessing workflow version is updat
 
 Run once per team (all samples from a single team) if `project.run_project_cohort_analysis` is set to `true`, and once for the whole cohort (all samples from all teams). This can be rerun using different sample subsets; including additional samples requires this entire analysis to be rerun. Intermediate files from previous runs are not reused and are stored in timestamped directories.
 
+> Note: scVI and Harmony are two independent integrations stored side by side in the same AnnData object. In the diagram, Harmony comes after scVI/scANVI and clustering only because the object is passed along in that order. Harmony does not use the scVI or scANVI latent space: it corrects the PCA embedding (`obsm["X_pca"]`, computed in `process`, or recomputed on all cells after the spike-in) and adds `obsm["X_pca_harmony"]`. Every earlier result, including `X_scVI`, `X_scANVI`, the scANVI labels and the scVI-based Leiden clusters and UMAP, is left unchanged. `artifact_metrics` then uses `scib` to compare the two integrations against unintegrated PCA.
+
 # Inputs
 
 An input template file can be found at [workflows/inputs.json](workflows/inputs.json).

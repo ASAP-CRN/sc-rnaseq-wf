@@ -68,6 +68,7 @@
 
 - _alternate integration_: [`add_harmony`](./main/add_harmony)
     - Add Harmony integration obsm (GPU, rapids-singlecell)
+    - Independent of scVI/scANVI: Harmony corrects `obsm["X_pca"]` (from `process`, or from `prep_da_spike_in` when cells are spiked in) by `batch_key` and writes `obsm["X_pca_harmony"]`. It runs after clustering only because it takes the same AnnData object. It does not use or modify `X_scVI`/`X_scANVI`, the scANVI labels, or the scVI-based Leiden clusters and UMAP
     - Save final metadata
 
 - _`SCIB` METRICS_: [`artifact_metrics`](./main/artifact_metrics)
