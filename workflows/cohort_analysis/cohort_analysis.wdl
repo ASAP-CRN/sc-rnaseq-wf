@@ -1081,6 +1081,7 @@ task plot_groups_and_features {
 	command <<<
 		set -euo pipefail
 
+		/usr/bin/time \
 		plot_groups_and_feats \
 			--adata-input ~{final_adata_object} \
 			--groups ~{sep=',' groups} \
