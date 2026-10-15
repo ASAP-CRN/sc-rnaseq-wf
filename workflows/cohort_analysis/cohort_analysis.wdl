@@ -1075,7 +1075,7 @@ task plot_groups_and_features {
 		String zones
 	}
 
-	Int mem_gb = ceil(size(final_adata_object, "GB") * 5 + 20)
+	Int mem_gb = ceil(size(final_adata_object, "GB") * 5 + 50)
 	Int disk_size = ceil(size(final_adata_object, "GB") * 4 + 20)
 
 	command <<<
@@ -1106,7 +1106,7 @@ task plot_groups_and_features {
 
 	runtime {
 		docker: "~{container_registry}/sc_tools:1.3.0"
-		cpu: 2
+		cpu: 4
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
 		disks: "local-disk ~{disk_size} SSD"
