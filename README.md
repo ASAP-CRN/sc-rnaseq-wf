@@ -45,9 +45,9 @@ Default QC filters (applied per cell, after merging):
 | Filter | Default |
 | :- | :- |
 | Mitochondrial counts (`pct_counts_mt`) | ≤ 10% |
-| Doublet score (scrublet, per sample) | ≤ 0.2 |
-| Total UMI counts | 500–150,000, and within 3 median absolute deviations (MADs) below / 5 MADs above the per-sample median |
-| Genes detected | 300–15,000, and within 3 MADs below / 5 MADs above the per-sample median |
+| Doublet score (scrublet, per sample) | < 0.2 |
+| Total UMI counts | 500–150,000, and within 3 median absolute deviations (MADs) below / 5 MADs above the per-sample median (median and MAD computed on barcodes within both absolute limits, i.e. after empty droplet removal) |
+| Genes detected | 300–15,000, and within 3 MADs below / 5 MADs above the per-sample median (computed on the same barcodes) |
 | Downsampling (`n_cells`) | None; all cells kept |
 | Cell type confidence (MapMyCells) | correlation ≥ 0.5 and bootstrap probability ≥ 0.5, otherwise `Unknown` |
 
@@ -61,6 +61,7 @@ The main output is `${cohort_id}.final.h5ad`. Useful contents:
 | `X` | log1p-normalized counts (target sum 10,000), highly variable genes only (plus Kamath DA marker genes for human) |
 | `obs["cell_type"]`, `obs["phenotype"]`, `obs["rho"]`, `obs["prob"]` | MapMyCells call, before (`phenotype`) and after (`cell_type`) the confidence threshold |
 | `obs["C_scANVI"]` | scANVI cell type for every cell |
+| `obs["scanvi_labels"]` | Labels scANVI was trained on (spike-in runs only): `cell_type`, plus the Kamath DA subtypes on Kamath cells, with cohort cells MMC called "Dopaminergic" set to `Unknown` when Kamath is spiked in so scANVI assigns them a DA subtype |
 | `obs["leiden_res_*"]` | Leiden clusters at each resolution |
 | `obs["is_spike_in"]`, `obs["spike_in_source"]` | `True` for reference cells spiked in from Kamath et al. 2022 or Siletti et al. 2023 (spike-in runs only), with the source in `spike_in_source`; remove these before analyzing your cohort |
 | `obs["ground_truth_cell_type"]` | Reference labels of spike-in cells: Kamath DA subtype, or Siletti supercluster ("Dopaminergic" for DA VGLUT2 neurons). Siletti cells are not used for scANVI training, so comparing this with `C_scANVI` on them benchmarks label transfer |
@@ -144,8 +145,8 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | File | cellranger_reference_data | Cellranger transcriptome reference data; see https://www.10xgenomics.com/support/software/cell-ranger/downloads/previous-versions and [Cell Ranger references](#cell-ranger-references). |
 | Float? | cellbender_fpr | Cellbender false positive rate for signal removal. [0.0] |
 | Int? | n_cells | Number of cells to keep. Cells are drawn uniformly at random without replacement for downsampling. Default is to keep all cells. |
-| Float? | pct_counts_mt_max | Maximum percentage of mitochondrial gene counts allowed per cell. [10] |
-| Int? | doublet_score_max | Maximum doublet detection score threshold. [0.2] |
+| Int? | pct_counts_mt_max | Maximum percentage of mitochondrial gene counts allowed per cell. [10] |
+| Float? | doublet_score_max | Doublet detection score threshold; cells with a score at or above it are removed. [0.2] |
 | Array[Int]? | total_counts_limits | Absolute minimum and maximum total UMI (unique molecular identifier) counts per cell; applied on top of the MAD-based thresholds. [500, 150000] |
 | Array[Int]? | n_genes_by_counts_limits | Absolute minimum and maximum number of genes detected per cell (genes with at least one count); applied on top of the MAD-based thresholds. [300, 15000] |
 | Float? | n_mads_lower | Number of MADs below the per-sample median allowed for total UMI counts and number of genes detected per cell. [3] |
@@ -162,7 +163,7 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | String? | batch_key | Key in AnnData object for batch information. ['batch_id'] |
 | Int? | n_neighbors | The size of local neighborhood (in terms of number of neighboring data points) used for manifold approximation. [15] |
 | Array[Float]? | leiden_res | Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.2, 0.5, 1.0] |
-| Array[String]? | groups | Groups to produce umap plots for. ['sample', 'batch_id', 'cell_type', 'leiden_res_0.20', 'leiden_res_0.50', 'leiden_res_1.0'] |
+| Array[String]? | groups | Groups to produce umap plots for. ['sample', 'batch_id', 'cell_type', 'leiden_res_0.20', 'leiden_res_0.50', 'leiden_res_1.00'] |
 | Array[String]? | features | Features to produce umap plots for. ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_rb', 'doublet_score', 'S_score', 'G2M_score'] |
 | Boolean? | run_cross_team_cohort_analysis | Whether to run downstream harmonization steps on all samples across projects. If set to false, only preprocessing steps (cellranger and generating the initial adata object(s)) will run for samples. [false] |
 | String | cohort_raw_data_bucket | Bucket to upload cross-team cohort intermediate files to. |
@@ -183,22 +184,22 @@ An input template file can be found at [workflows/inputs.json](workflows/inputs.
 | Boolean | multimodal_sc_data | Whether or not the sc/sn RNAseq is from multimodal data. |
 | Boolean | run_project_cohort_analysis | Whether or not to run cohort analysis within the project. |
 | String | raw_data_bucket | Raw data bucket; intermediate output files that are not final workflow outputs are stored here. |
-| String | staging_data_bucket | Staging data bucket; final project-level outputs are stored here. |
+| Array[String] | staging_data_buckets | Staging data buckets; final project-level outputs are stored here. |
 
 ### Sample
 
 | Type | Name | Description |
 | :- | :- | :- |
 | String | sample_id | ASAP-generated unique identifier combined with the replicate for the sample within the project. |
-| String? | batch | The sample's batch. If unset, the analysis will stop after running `cellranger_count`. |
-| String? | sex | The sample's sex. |
+| String? | batch | The sample's batch. Required to build the sample's AnnData object; if unset, the workflow fails after `cellranger_count` and CellBender. |
+| String? | sex | The sample's sex; set to 'NA' in the AnnData object if unset. |
 | String? | brain_region_level_1 | Abbreviation of most granular anatomical region (Level 1). |
 | String? | brain_region_level_2 | Abbreviation of intermediate level anatomical region (Level 2). |
 | String? | brain_region_level_3 | Abbreviation of coarse level anatomical region (Level 3). |
-| File | fastq_R1 | Path to the sample's read 1 FASTQ file. |
-| File | fastq_R2 | Path to the sample's read 2 FASTQ file. |
-| File? | fastq_I1 | Optional fastq index 1. |
-| File? | fastq_I2 | Optional fastq index 2. |
+| Array[File]+ | fastq_R1s | Paths to the sample's read 1 FASTQ files. |
+| Array[File]+ | fastq_R2s | Paths to the sample's read 2 FASTQ files. |
+| Array[File] | fastq_I1s | Optional index 1 FASTQ files. |
+| Array[File] | fastq_I2s | Optional index 2 FASTQ files. |
 
 ## Generating the inputs JSON
 
@@ -327,9 +328,9 @@ asap-dev-{cohort,team-xxyy}-{source}-{modality_flavour}-{context}
             │   ├── ${cohort_id}.pct_counts_rb.violin.png
             │   ├── ${cohort_id}.total_counts.violin.png
             │   ├── ${cohort_id}.filtered_out_cells.csv
-            │   ├── ${cohort_id}.{mmc_otf_mapping.SEAAD,mmc_markers_mapping}.extended_results.json
-            │   ├── ${cohort_id}.{mmc_otf_mapping.SEAAD,mmc_markers_mapping}.results.csv
-            │   ├── ${cohort_id}.{mmc_otf_mapping.SEAAD,mmc_markers_mapping}.log.txt
+            │   ├── ${cohort_id}.{mmc_otf_mapping.${mmc_taxonomy},mmc_markers_mapping.ABC}.extended_results.json
+            │   ├── ${cohort_id}.{mmc_otf_mapping.${mmc_taxonomy},mmc_markers_mapping.ABC}.results.csv
+            │   ├── ${cohort_id}.{mmc_otf_mapping.${mmc_taxonomy},mmc_markers_mapping.ABC}.log.txt
             │   ├── ${cohort_id}.all_genes.csv
             │   ├── ${cohort_id}.hvg_genes.csv
             │   ├── ${cohort_id}.mmc_results.parquet
@@ -355,12 +356,11 @@ asap-dev-{cohort,team-xxyy}-{source}-{modality_flavour}-{context}
             │   ├── ${dataset_id}.${sampleA_id}.cellbender_report.html
             │   ├── ${dataset_id}.${sampleA_id}.cellbender_metrics.csv
             │   ├── ${dataset_id}.${sampleA_id}.cellbender_filtered.h5
-            │   ├── ${dataset_id}.${sampleA_id}.cellbender_ckpt.tar.gz
             │   ├── ${dataset_id}.${sampleA_id}.cellbender_cell_barcodes.csv
             │   ├── ${dataset_id}.${sampleA_id}.cellbender.pdf
             │   ├── ${dataset_id}.${sampleA_id}.cellbender.log
             │   ├── ${dataset_id}.${sampleA_id}.cellbender.h5
-            │   ├── ${dataset_id}.${sampleA_id}.cellbender_posterior.h5
+            │   ├── ${dataset_id}.${sampleA_id}.cellbend_posterior.h5
             │   ├── ${dataset_id}.${sampleA_id}.cleaned_unfiltered.h5ad
             │   ├── ${dataset_id}.${sampleB_id}.cellranger_sc_rnaseq_outputs.tar.gz
             │   ├── ${dataset_id}.${sampleB_id}.filtered_feature_bc_matrix.h5
@@ -372,12 +372,11 @@ asap-dev-{cohort,team-xxyy}-{source}-{modality_flavour}-{context}
             │   ├── ${dataset_id}.${sampleB_id}.cellbender_report.html
             │   ├── ${dataset_id}.${sampleB_id}.cellbender_metrics.csv
             │   ├── ${dataset_id}.${sampleB_id}.cellbender_filtered.h5
-            │   ├── ${dataset_id}.${sampleB_id}.cellbender_ckpt.tar.gz
             │   ├── ${dataset_id}.${sampleB_id}.cellbender_cell_barcodes.csv
             │   ├── ${dataset_id}.${sampleB_id}.cellbender.pdf
             │   ├── ${dataset_id}.${sampleB_id}.cellbender.log
             │   ├── ${dataset_id}.${sampleB_id}.cellbender.h5
-            │   ├── ${dataset_id}.${sampleB_id}.cellbender_posterior.h5
+            │   ├── ${dataset_id}.${sampleB_id}.cellbend_posterior.h5
             │   ├── ${dataset_id}.${sampleB_id}.cleaned_unfiltered.h5ad
             │   ├── ...
             │   ├── ${dataset_id}.${sampleN_id}.cellranger_sc_rnaseq_outputs.tar.gz
@@ -390,12 +389,11 @@ asap-dev-{cohort,team-xxyy}-{source}-{modality_flavour}-{context}
             │   ├── ${dataset_id}.${sampleN_id}.cellbender_report.html
             │   ├── ${dataset_id}.${sampleN_id}.cellbender_metrics.csv
             │   ├── ${dataset_id}.${sampleN_id}.cellbender_filtered.h5
-            │   ├── ${dataset_id}.${sampleN_id}.cellbender_ckpt.tar.gz
             │   ├── ${dataset_id}.${sampleN_id}.cellbender_cell_barcodes.csv
             │   ├── ${dataset_id}.${sampleN_id}.cellbender.pdf
             │   ├── ${dataset_id}.${sampleN_id}.cellbender.log
             │   ├── ${dataset_id}.${sampleN_id}.cellbender.h5
-            │   ├── ${dataset_id}.${sampleN_id}.cellbender_posterior.h5
+            │   ├── ${dataset_id}.${sampleN_id}.cellbend_posterior.h5
             │   ├── ${dataset_id}.${sampleN_id}.cleaned_unfiltered.h5ad
             │   └── MANIFEST.tsv
             ├── workflow_version # plain text file
@@ -521,7 +519,7 @@ In general, `wdl-ci` will use inputs provided in the [wdl-ci.config.json](./wdl-
 
 | Taxonomy | Description | Link |
 | :- | :- | :- |
-| 10x Whole human brain taxonomy (CCN20240330) | Transcriptomic diversity of cell types in adult human brain. Source file used is `precomputed_stats.siletti.training.h5`. | https://allen-brain-cell-atlas.s3.us-west-2.amazonaws.com/index.html#mapmycells/WHB-10Xv3/20240831/. |
+| 10x Whole human brain taxonomy (WHB taxonomy 20240330, CCN202210140) | Transcriptomic diversity of cell types in adult human brain. Source file used is `precomputed_stats.siletti.training.h5`. | https://allen-brain-cell-atlas.s3.us-west-2.amazonaws.com/index.html#mapmycells/WHB-10Xv3/20240831/. |
 | 10x Whole mouse brain taxonomy (CCN20230722) | A high-resolution transcriptomic and spatial atlas of cell types in the whole mouse brain. Source files used are `precomputed_stats_ABC_revision_230821.h5` and `mouse_markers_230821.json`. | https://allen-brain-cell-atlas.s3.us-west-2.amazonaws.com/index.html#mapmycells/WMB-10X/20240831/. |
 
 

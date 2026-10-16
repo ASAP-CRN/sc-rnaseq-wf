@@ -275,6 +275,7 @@
               "inputs": {
                 "cohort_id": "${cohort_id}",
                 "final_adata_object": "${input_resources_file_path}/${cohort_workflow_name}/${cohort_id}.final.h5ad",
+                "scvi_latent_key": "${scvi_latent_key}",
                 "scanvi_predictions_key": "${scanvi_predictions_key}",
                 "batch_key": "${batch_key}",
                 "benchmark_spike_in": false,
@@ -393,6 +394,7 @@
                 "cohort_id": "${cohort_id}",
                 "integrated_adata_object": "${input_resources_file_path}/${cohort_workflow_name}/${cohort_id}.scvi_integrated.h5ad",
                 "scvi_model_tar_gz": "${input_resources_file_path}/${cohort_workflow_name}/${cohort_id}.scvi_model.tar.gz",
+                "scvi_latent_key": "${scvi_latent_key}",
                 "scanvi_latent_key": "${scanvi_latent_key}",
                 "scanvi_predictions_key": "${scanvi_predictions_key}",
                 "raw_data_path": "${cohort_raw_data_path}",
@@ -870,7 +872,7 @@
         "cell_type",
         "leiden_res_0.20",
         "leiden_res_0.50",
-        "leiden_res_1.0"
+        "leiden_res_1.00"
       ],
       "features": [
         "n_genes_by_counts",
