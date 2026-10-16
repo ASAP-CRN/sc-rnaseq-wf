@@ -139,7 +139,7 @@ workflow preprocess {
 					dataset_sample_id = dataset_sample_id,
 					sample_id = sample.sample_id,
 					batch = select_first([sample.batch]),
-					sex = select_first([sample.sex]),
+					sex = select_first([sample.sex, "NA"]),
 					brain_region_level_1 = select_first([sample.brain_region_level_1, "NA"]),
 					brain_region_level_2 = select_first([sample.brain_region_level_2, "NA"]),
 					brain_region_level_3 = select_first([sample.brain_region_level_3, "NA"]),
@@ -507,7 +507,7 @@ task counts_to_adata {
 			--adata-input ~{cellbender_counts} \
 			--sample-id ~{sample_id} \
 			--batch ~{batch} \
-			--sex ~{sex} \
+			--sex "~{sex}" \
 			--brain-region-level-1 "~{brain_region_level_1}" \
 			--brain-region-level-2 "~{brain_region_level_2}" \
 			--brain-region-level-3 "~{brain_region_level_3}" \

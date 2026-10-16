@@ -208,6 +208,7 @@ workflow cohort_analysis {
 		input:
 			cohort_id = cohort_id,
 			final_adata_object = integrate_harmony.final_adata_object, #!FileCoercion
+			scvi_latent_key = scvi_latent_key,
 			scanvi_predictions_key = scanvi_predictions_key,
 			batch_key = batch_key,
 			benchmark_spike_in = defined(siletti_post_qc_adata_object),
@@ -380,8 +381,8 @@ workflow cohort_analysis {
 		scanvi_predictions_key: {help: "scANVI cell type predictions column name. ['C_scANVI']"}
 		batch_key: {help: "Key in AnnData object for batch information. ['batch_id']"}
 		n_neighbors: {help: "The size of local neighborhood (in terms of number of neighboring data points) used for manifold approximation. [15]"}
-		leiden_res: {help: "Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.05, 0.1, 0.2, 0.4]"}
-		groups: {help: "Groups to produce umap plots for. ['sample', 'batch_id', 'cell_type', 'leiden_res_0.05', 'leiden_res_0.10', 'leiden_res_0.20', 'leiden_res_0.40']"}
+		leiden_res: {help: "Leiden resolutions which are the parameter values controlling the coarseness of the clustering. [0.2, 0.5, 1.0]"}
+		groups: {help: "Groups to produce umap plots for. ['sample', 'batch_id', 'cell_type', 'leiden_res_0.20', 'leiden_res_0.50', 'leiden_res_1.00']"}
 		features: {help: "Features to produce umap plots for. ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_rb', 'doublet_score', 'S_score', 'G2M_score']"}
 		workflow_name: {help: "Workflow name; stored in the file-level manifest and final manifest with all saved files."}
 		workflow_version: {help: "Workflow version; stored in the file-level manifest and final manifest with all saved files."}
@@ -415,7 +416,9 @@ task merge_and_plot_qc_metrics {
 		Array[String]? my_none_array
 	}
 
-	Int mem_gb = ceil(size(preprocessed_adata_objects, "GB") * 2.4 + 20)
+	# Peak use is ~2x the input size (chunked concat)
+	Int calc_mem_gb = ceil(size(preprocessed_adata_objects, "GB") * 2.8 + 20)
+	Int mem_gb = if calc_mem_gb > 624 then 624 else calc_mem_gb
 	Int disk_size = ceil(size(preprocessed_adata_objects, "GB") * 3 + 50)
 
 	command <<<
@@ -665,7 +668,6 @@ task map_cell_types {
 		cpuPlatform: "Intel Cascade Lake"
 		memory: "~{mem_gb} GB"
 		disks: "local-disk ~{disk_size} SSD"
-		preemptible: 3
 		bootDiskSizeGb: 40
 		zones: zones
 	}
@@ -918,7 +920,9 @@ task integrate_harmony {
 		String zones
 	}
 
-	Int mem_gb = ceil(size(umap_clustered_adata_object, "GB") * 8 + 20)
+	# T4 machines have at most 312 GB
+	Int calc_mem_gb = ceil(size(umap_clustered_adata_object, "GB") * 8 + 20)
+	Int mem_gb = if calc_mem_gb > 312 then 312 else calc_mem_gb
 	Int disk_size = ceil(size(umap_clustered_adata_object, "GB") * 4 + 20)
 
 	command <<<
@@ -979,6 +983,7 @@ task artifact_metrics {
 		String cohort_id
 		File final_adata_object
 
+		String scvi_latent_key
 		String scanvi_predictions_key
 		String batch_key
 		Boolean benchmark_spike_in
@@ -1001,6 +1006,7 @@ task artifact_metrics {
 
 		/usr/bin/time \
 		artifact_metrics \
+			--scvi-latent-key ~{scvi_latent_key} \
 			--predictions-key ~{scanvi_predictions_key} \
 			--batch-key ~{batch_key} \
 			--adata-input ~{final_adata_object} \
@@ -1043,12 +1049,13 @@ task artifact_metrics {
 	}
 
 	meta {
-		description: "Computes scib-metrics integration quality scores on the final AnnData object and exports results as a CSV report and SVG visualization. If Siletti cells were spiked in, also scores scANVI predictions on them against their Allen ground truth (per-label precision, recall and F1)."
+		description: "Computes scib-metrics integration quality scores on the final AnnData object (cohort cells only; spike-in cells are excluded) and exports results as a CSV report and SVG visualization. If Siletti cells were spiked in, also scores scANVI predictions on them against their Allen ground truth (per-label precision, recall and F1)."
 	}
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
 		final_adata_object: {help: "Final Harmony-integrated AnnData object."}
+		scvi_latent_key: {help: "Latent key of the scVI latent to benchmark. ['X_scVI']"}
 		scanvi_predictions_key: {help: "scANVI cell type predictions column name. ['C_scANVI']"}
 		batch_key: {help: "Key in AnnData object for batch information. ['batch_id']"}
 		benchmark_spike_in: {help: "Whether to score scANVI predictions on held-out Siletti spike-in cells against their Allen ground truth labels."}
@@ -1075,7 +1082,8 @@ task plot_groups_and_features {
 		String zones
 	}
 
-	Int mem_gb = ceil(size(final_adata_object, "GB") * 5 + 50)
+	# Only obs and obsm['X_umap'] are loaded
+	Int mem_gb = ceil(size(final_adata_object, "GB") * 2 + 20)
 	Int disk_size = ceil(size(final_adata_object, "GB") * 4 + 20)
 
 	command <<<
@@ -1117,13 +1125,13 @@ task plot_groups_and_features {
 	}
 
 	meta {
-		description: "Generates UMAP plots colored by cell metadata groups and gene expression features from the final integrated AnnData object."
+		description: "Generates UMAP plots colored by cell metadata groups and QC/cell cycle features from the final integrated AnnData object; categorical groups with more than 102 categories are plotted without a legend."
 	}
 
 	parameter_meta {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
 		final_adata_object: {help: "Final integrated AnnData object."}
-		groups: {help: "Groups to produce umap plots for. ['sample', 'batch_id', 'cell_type', 'leiden_res_0.05', 'leiden_res_0.10', 'leiden_res_0.20', 'leiden_res_0.40']"}
+		groups: {help: "Groups to produce umap plots for. ['sample', 'batch_id', 'cell_type', 'leiden_res_0.20', 'leiden_res_0.50', 'leiden_res_1.00']"}
 		features: {help: "Features to produce umap plots for. ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_rb', 'doublet_score', 'S_score', 'G2M_score']"}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
 		workflow_info: {help: "UTC timestamp, workflow name, workflow version, and GitHub release; stored in the file-level manifest and final manifest with all saved files."}

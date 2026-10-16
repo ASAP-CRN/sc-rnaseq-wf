@@ -102,27 +102,36 @@ def filter_adata(adata_fname: str) -> tuple[AnnData, pd.DataFrame]:
     # mu.pp.filter_obs(adata, "doublet_score", lambda x: x < doublet_score_max)
     keep_doublet = obs['doublet_score'] < args.doublet_score_max
 
-    print(f"----      filter 3: total_counts (absolute limits + {args.n_mads_lower}/{args.n_mads_upper} MADs)")
-    total_counts_mad_low, total_counts_mad_high = mad_outlier_by_group(
-        obs, 'total_counts', group_key, args.n_mads_lower, args.n_mads_upper
-    )
-    keep_total_counts = (
+    # The input holds every barcode CellBender analyzed, including empty droplets, which the absolute limits remove.
+    # MAD thresholds are computed only on barcodes within the absolute limits; otherwise empty droplets set the
+    # per-sample median and MAD, which disables the MAD filter or, in mostly-empty samples, removes real nuclei
+    keep_total_counts_limits = (
         (obs['total_counts'] >= args.total_counts_limits[0])
         & (obs['total_counts'] <= args.total_counts_limits[1])
-        & ~total_counts_mad_low
-        & ~total_counts_mad_high
     )
+    keep_n_genes_by_counts_limits = (
+        (obs['n_genes_by_counts'] >= args.n_genes_by_counts_limits[0])
+        & (obs['n_genes_by_counts'] <= args.n_genes_by_counts_limits[1])
+    )
+    within_limits = keep_total_counts_limits & keep_n_genes_by_counts_limits
+    obs_within_limits = obs[within_limits]
+    print(f"----      {within_limits.sum()}/{len(obs)} barcodes within the absolute total_counts and n_genes_by_counts limits; MADs computed on these")
+
+    print(f"----      filter 3: total_counts (absolute limits + {args.n_mads_lower}/{args.n_mads_upper} MADs)")
+    total_counts_mad_low, total_counts_mad_high = mad_outlier_by_group(
+        obs_within_limits, 'total_counts', group_key, args.n_mads_lower, args.n_mads_upper
+    )
+    total_counts_mad_low = total_counts_mad_low.reindex(obs.index, fill_value=False)
+    total_counts_mad_high = total_counts_mad_high.reindex(obs.index, fill_value=False)
+    keep_total_counts = keep_total_counts_limits & ~total_counts_mad_low & ~total_counts_mad_high
 
     print(f"----         filter 4: n_genes_by_counts (absolute limits + {args.n_mads_lower}/{args.n_mads_upper} MADs)")
     n_genes_mad_low, n_genes_mad_high = mad_outlier_by_group(
-        obs, 'n_genes_by_counts', group_key, args.n_mads_lower, args.n_mads_upper
+        obs_within_limits, 'n_genes_by_counts', group_key, args.n_mads_lower, args.n_mads_upper
     )
-    keep_n_genes_by_counts = (
-        (obs['n_genes_by_counts'] >= args.n_genes_by_counts_limits[0])
-        & (obs['n_genes_by_counts'] <= args.n_genes_by_counts_limits[1])
-        & ~n_genes_mad_low
-        & ~n_genes_mad_high
-    )
+    n_genes_mad_low = n_genes_mad_low.reindex(obs.index, fill_value=False)
+    n_genes_mad_high = n_genes_mad_high.reindex(obs.index, fill_value=False)
+    keep_n_genes_by_counts = keep_n_genes_by_counts_limits & ~n_genes_mad_low & ~n_genes_mad_high
 
     keep_cells = keep_mt & keep_doublet & keep_total_counts & keep_n_genes_by_counts
     print(f"keeping {keep_cells.sum()}/{len(keep_cells)} cells")

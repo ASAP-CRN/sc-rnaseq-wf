@@ -1,49 +1,76 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
+import h5py
+import matplotlib.pyplot as plt
+import pandas as pd
 import scanpy as sc
+from anndata import AnnData
+from anndata.io import read_elem
+
+# scanpy colors at most 102 categories (default_102 palette) and greys out every category beyond that, so a legend
+# past this point is uninformative; drawing one with tens of thousands of entries (e.g. broken Leiden clustering)
+# takes hours, so skip it and warn instead
+MAX_LEGEND_CATEGORIES = 102
 
 
-def make_f_and_g_plots(adata: sc.AnnData, group_name: str, feature_name: str, groups:str, features:str):
-    # Set CPUs to use for parallel computing
-    sc.settings.n_jobs = -1
+def read_obs_and_umap(adata_path: str) -> AnnData:
+    """
+    Read only obs and the UMAP embedding; the expression matrices are not needed for plotting
+    """
+    with h5py.File(adata_path, "r") as f:
+        obs = read_elem(f["obs"])
+        umap = read_elem(f["obsm/X_umap"])
+    return AnnData(obs=obs, obsm={"X_umap": umap})
 
-    # Set working directory and load packages
+
+def is_categorical(values: pd.Series) -> bool:
+    return not pd.api.types.is_numeric_dtype(values) or pd.api.types.is_bool_dtype(values)
+
+
+def plot_umaps(adata: AnnData, keys: list[str], output_file: str):
+    plot_keys = [x for x in keys if x in adata.obs.columns]
+    missing_keys = [x for x in keys if x not in adata.obs.columns]
+    if missing_keys:
+        print(f"[WARNING] Not found in obs; skipping: {missing_keys}")
+    if not plot_keys:
+        raise ValueError(f"[ERROR] None of {keys} found in obs")
+
+    fig, axes = plt.subplots(len(plot_keys), 1, figsize=(12, 8 * len(plot_keys)), squeeze=False)
+    for key, ax in zip(plot_keys, axes[:, 0]):
+        legend_loc = "right margin"
+        if is_categorical(adata.obs[key]):
+            n_categories = adata.obs[key].nunique()
+            if n_categories > MAX_LEGEND_CATEGORIES:
+                print(f"[WARNING] '{key}' has {n_categories} categories (>{MAX_LEGEND_CATEGORIES}); plotting without a legend")
+                legend_loc = None
+        sc.pl.embedding(
+            adata,
+            basis="umap",
+            color=key,
+            frameon=False,
+            show=False,
+            ax=ax,
+            legend_loc=legend_loc,
+        )
+    fig.savefig(output_file, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Wrote {output_file}")
+
+
+def make_f_and_g_plots(adata: AnnData, group_name: str, feature_name: str, groups: str, features: str):
     sc.settings.verbosity = 1
-    sc.settings.figdir = "plots/"
-    sc.set_figure_params(
-        dpi=100, fontsize=10, dpi_save=300, format="png", figsize=("12", "8")
-    )  # type: ignore
+    sc.set_figure_params(dpi=100, fontsize=10, dpi_save=300, format="png")  # type: ignore
+    os.makedirs("plots", exist_ok=True)
 
-    features_list = features.split(",")
-    plot_features = [x for x in features_list if x in adata.obs.columns]
-    file_name = group_name + "_features_umap.png"
-    sc.pl.embedding(
-        adata,
-        basis="umap",
-        color=plot_features,
-        frameon=False,
-        show=False,
-        ncols=1,
-        save=file_name,
-    )
-
-    groups_list = groups.split(",")
-    plot_groups = [x for x in groups_list if x in adata.obs.columns]
-    file_name = feature_name + "_groups_umap.png"
-    sc.pl.embedding(
-        adata,
-        basis="umap",
-        color=plot_groups,
-        frameon=False,
-        show=False,
-        ncols=1,
-        save=file_name,
-    )
+    plot_umaps(adata, features.split(","), f"plots/umap{feature_name}_features_umap.png")
+    plot_umaps(adata, groups.split(","), f"plots/umap{group_name}_groups_umap.png")
 
 
 def main(args: argparse.Namespace):
-    adata = sc.read_h5ad(args.adata_input)  # type: ignore
+    adata = read_obs_and_umap(args.adata_input)
+    print(f"Plotting {adata.n_obs} cells")
     group_name = args.output_group_umap_plot_prefix
     feature_name = args.output_feature_umap_plot_prefix
     make_f_and_g_plots(adata, group_name, feature_name, args.groups, args.features)
@@ -67,7 +94,7 @@ if __name__ == "__main__":
         "--output-group-umap-plot-prefix",
         type=str,
         required=True,
-        help="Output file prefix to write the group umap plot to; will write both a PDF and a PNG",
+        help="Output file prefix to write the group umap plot to",
     )
     parser.add_argument(
         "--features",

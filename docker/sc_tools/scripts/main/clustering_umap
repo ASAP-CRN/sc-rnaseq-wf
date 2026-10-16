@@ -7,17 +7,22 @@ from anndata import AnnData
 
 
 def get_cluster_umap(adata: AnnData, latent_key: str, n_neighbors : int) -> AnnData:
-    # Calculate neighbor graph on scVI latent
-    rsc.pp.neighbors(adata, n_neighbors=n_neighbors, use_rep=latent_key, algorithm="cagra")
+    # Calculate neighbor graph on scVI latent; exact (brute force) kNN is cheap on the GPU for a 30-dimensional latent
+    rsc.pp.neighbors(adata, n_neighbors=n_neighbors, use_rep=latent_key)
     # Do Leiden
     for resolution in args.leiden_res:
         rsc.tl.leiden(
             adata,
             resolution=resolution,
             key_added=f"leiden_res_{resolution:4.2f}",
-            n_iterations=2,
         )
-    rsc.tl.umap(adata)
+    # rsc defaults to random initialization above 1M cells; keep spectral initialization (as scanpy) at every size,
+    # falling back to random if the spectral solver fails (untested on the GPU above ~600k cells)
+    try:
+        rsc.tl.umap(adata, init_pos="spectral")
+    except Exception as e:
+        print(f"[WARNING] UMAP with spectral initialization failed ({type(e).__name__}: {e}); retrying with random initialization")
+        rsc.tl.umap(adata, init_pos="random")
     return adata
 
 

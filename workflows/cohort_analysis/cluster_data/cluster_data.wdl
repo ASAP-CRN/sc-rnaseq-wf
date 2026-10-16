@@ -43,6 +43,7 @@ workflow cluster_data {
 			cohort_id = cohort_id,
 			integrated_adata_object = integrate_sample_data.integrated_adata_object,
 			scvi_model_tar_gz = integrate_sample_data.scvi_model_tar_gz, #!FileCoercion
+			scvi_latent_key = scvi_latent_key,
 			scanvi_latent_key = scanvi_latent_key,
 			scanvi_predictions_key = scanvi_predictions_key,
 			raw_data_path = raw_data_path,
@@ -110,7 +111,9 @@ task integrate_sample_data {
 		String zones
 	}
 
-	Int mem_gb = ceil(size(mmc_adata_object, "GB") * 5 + 20)
+	# T4 machines have at most 312 GB
+	Int calc_mem_gb = ceil(size(mmc_adata_object, "GB") * 5 + 20)
+	Int mem_gb = if calc_mem_gb > 312 then 312 else calc_mem_gb
 	String gpu_type = if mem_gb > 78 then "nvidia-tesla-t4" else "nvidia-tesla-v100"
 	Int disk_size = ceil(size(mmc_adata_object, "GB") * 3 + 50)
 
@@ -176,6 +179,7 @@ task assign_remaining_cells {
 		File integrated_adata_object
 		File scvi_model_tar_gz
 
+		String scvi_latent_key
 		String scanvi_latent_key
 		String scanvi_predictions_key
 
@@ -187,7 +191,9 @@ task assign_remaining_cells {
 		String zones
 	}
 
-	Int mem_gb = ceil(size(integrated_adata_object, "GB") * 12 + 30)
+	# T4 machines have at most 312 GB
+	Int calc_mem_gb = ceil(size(integrated_adata_object, "GB") * 12 + 30)
+	Int mem_gb = if calc_mem_gb > 312 then 312 else calc_mem_gb
 	String gpu_type = if mem_gb > 78 then "nvidia-tesla-t4" else "nvidia-tesla-v100"
 	Int disk_size = ceil(size(integrated_adata_object, "GB") * 3 + 50)
 
@@ -202,6 +208,7 @@ task assign_remaining_cells {
 		/usr/bin/time \
 		label_scanvi \
 			--workflow-name ~{workflow_name} \
+			--scvi-latent-key ~{scvi_latent_key} \
 			--latent-key ~{scanvi_latent_key} \
 			--predictions-key ~{scanvi_predictions_key} \
 			--adata-input ~{integrated_adata_object} \
@@ -246,6 +253,7 @@ task assign_remaining_cells {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
 		integrated_adata_object: {help: "scVI-integrated AnnData object with batch-corrected latent representation."}
 		scvi_model_tar_gz: {help: "Tarball of the trained scVI model directory from integrate_sample_data."}
+		scvi_latent_key: {help: "Latent key of the scVI latent; checked for NaN before training. ['X_scVI']"}
 		scanvi_latent_key: {help: "Latent key to save the scANVI latent to. ['X_scANVI']"}
 		scanvi_predictions_key: {help: "scANVI cell type predictions column name. ['C_scANVI']"}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}
@@ -271,7 +279,9 @@ task cluster_cells {
 		String zones
 	}
 
-	Int mem_gb = ceil(size(labeled_cells_adata_object, "GB") * 8.7 + 20)
+	# T4 machines have at most 312 GB
+	Int calc_mem_gb = ceil(size(labeled_cells_adata_object, "GB") * 8.7 + 20)
+	Int mem_gb = if calc_mem_gb > 312 then 312 else calc_mem_gb
 	Int disk_size = ceil(size([labeled_cells_adata_object], "GB") * 6 + 50)
 
 	command <<<
