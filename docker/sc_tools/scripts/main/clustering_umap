@@ -16,8 +16,6 @@ def get_cluster_umap(adata: AnnData, latent_key: str, n_neighbors : int) -> AnnD
             resolution=resolution,
             key_added=f"leiden_res_{resolution:4.2f}",
         )
-    # rsc defaults to random initialization above 1M cells; keep spectral initialization (as scanpy) at every size,
-    # falling back to random if the spectral solver fails (untested on the GPU above ~600k cells)
     try:
         rsc.tl.umap(adata, init_pos="spectral")
     except Exception as e:

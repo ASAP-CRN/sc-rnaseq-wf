@@ -111,9 +111,7 @@ task integrate_sample_data {
 		String zones
 	}
 
-	# T4 machines have at most 312 GB
-	Int calc_mem_gb = ceil(size(mmc_adata_object, "GB") * 5 + 20)
-	Int mem_gb = if calc_mem_gb > 312 then 312 else calc_mem_gb
+	Int mem_gb = ceil(size(mmc_adata_object, "GB") * 5 + 20)
 	String gpu_type = if mem_gb > 78 then "nvidia-tesla-t4" else "nvidia-tesla-v100"
 	Int disk_size = ceil(size(mmc_adata_object, "GB") * 3 + 50)
 
@@ -191,9 +189,7 @@ task assign_remaining_cells {
 		String zones
 	}
 
-	# T4 machines have at most 312 GB
-	Int calc_mem_gb = ceil(size(integrated_adata_object, "GB") * 12 + 30)
-	Int mem_gb = if calc_mem_gb > 312 then 312 else calc_mem_gb
+	Int mem_gb = ceil(size(integrated_adata_object, "GB") * 12 + 30)
 	String gpu_type = if mem_gb > 78 then "nvidia-tesla-t4" else "nvidia-tesla-v100"
 	Int disk_size = ceil(size(integrated_adata_object, "GB") * 3 + 50)
 
@@ -279,9 +275,7 @@ task cluster_cells {
 		String zones
 	}
 
-	# T4 machines have at most 312 GB
-	Int calc_mem_gb = ceil(size(labeled_cells_adata_object, "GB") * 8.7 + 20)
-	Int mem_gb = if calc_mem_gb > 312 then 312 else calc_mem_gb
+	Int mem_gb = ceil(size(labeled_cells_adata_object, "GB") * 8.7 + 20)
 	Int disk_size = ceil(size([labeled_cells_adata_object], "GB") * 6 + 50)
 
 	command <<<

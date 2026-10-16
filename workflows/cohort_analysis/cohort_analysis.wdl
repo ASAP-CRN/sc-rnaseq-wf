@@ -416,9 +416,7 @@ task merge_and_plot_qc_metrics {
 		Array[String]? my_none_array
 	}
 
-	# Peak use is ~2x the input size (chunked concat)
-	Int calc_mem_gb = ceil(size(preprocessed_adata_objects, "GB") * 2.8 + 20)
-	Int mem_gb = if calc_mem_gb > 624 then 624 else calc_mem_gb
+	Int mem_gb = ceil(size(preprocessed_adata_objects, "GB") * 2.4 + 20)
 	Int disk_size = ceil(size(preprocessed_adata_objects, "GB") * 3 + 50)
 
 	command <<<
@@ -920,9 +918,7 @@ task integrate_harmony {
 		String zones
 	}
 
-	# T4 machines have at most 312 GB
-	Int calc_mem_gb = ceil(size(umap_clustered_adata_object, "GB") * 8 + 20)
-	Int mem_gb = if calc_mem_gb > 312 then 312 else calc_mem_gb
+	Int mem_gb = ceil(size(umap_clustered_adata_object, "GB") * 8 + 20)
 	Int disk_size = ceil(size(umap_clustered_adata_object, "GB") * 4 + 20)
 
 	command <<<
@@ -1082,7 +1078,6 @@ task plot_groups_and_features {
 		String zones
 	}
 
-	# Only obs and obsm['X_umap'] are loaded
 	Int mem_gb = ceil(size(final_adata_object, "GB") * 2 + 20)
 	Int disk_size = ceil(size(final_adata_object, "GB") * 4 + 20)
 

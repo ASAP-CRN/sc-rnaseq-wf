@@ -102,9 +102,6 @@ def filter_adata(adata_fname: str) -> tuple[AnnData, pd.DataFrame]:
     # mu.pp.filter_obs(adata, "doublet_score", lambda x: x < doublet_score_max)
     keep_doublet = obs['doublet_score'] < args.doublet_score_max
 
-    # The input holds every barcode CellBender analyzed, including empty droplets, which the absolute limits remove.
-    # MAD thresholds are computed only on barcodes within the absolute limits; otherwise empty droplets set the
-    # per-sample median and MAD, which disables the MAD filter or, in mostly-empty samples, removes real nuclei
     keep_total_counts_limits = (
         (obs['total_counts'] >= args.total_counts_limits[0])
         & (obs['total_counts'] <= args.total_counts_limits[1])

@@ -90,8 +90,7 @@ def label_with_scanvi(
     )
 
     n_cells = adata.n_obs
-    # scANVI starts from the trained scVI weights, so it needs far fewer epochs (scvi-tools' own default from a
-    # pretrained scVI model is at most 10); the floor is raised from 10 because validation loss was still falling
+    # scANVI starts from the trained scVI weights, so it needs far fewer epochs (scvi-tools' own default from a pretrained scVI model is at most 10)
     scanvi_epochs = scvi.model.get_max_epochs_heuristic(n_obs=n_cells)
     scanvi_epochs = max(scanvi_epochs, 20)
     print(f"--- Using up to {scanvi_epochs} epochs (early stopping patience {early_stopping_patience})")

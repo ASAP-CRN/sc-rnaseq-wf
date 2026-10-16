@@ -62,8 +62,6 @@ def integrate_with_scvi(
     )
 
     n_cells = adata.n_obs
-    # The heuristic gives ~13 epochs at 600k cells and 2 at 4M, and at batch size 1024 that is far from converged
-    # (validation ELBO still falling ~0.6% every 5 epochs at the end of 5.0.0 runs); early stopping ends training on plateau
     scvi_epochs = scvi.model.get_max_epochs_heuristic(n_obs=n_cells)
     scvi_epochs = max(scvi_epochs, 100)
     print(f"--- Using up to {scvi_epochs} epochs (early stopping patience {early_stopping_patience})")
