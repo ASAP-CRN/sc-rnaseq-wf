@@ -106,7 +106,7 @@
         },
         "map_cell_types": {
           "key": "map_cell_types",
-          "digest": "iqwxmt2p4tvkzoynmckvspidbrvqjluj",
+          "digest": "dpdvjkhupzp6guugoqozhxujwvsdgef4",
           "tests": [
             {
               "inputs": {
@@ -269,12 +269,13 @@
         },
         "artifact_metrics": {
           "key": "artifact_metrics",
-          "digest": "pk3eyrhwucwbwkml3tqcaql7fwzxkxiv",
+          "digest": "dbkfw4xuc56jzdixwfuddy77m36riiji",
           "tests": [
             {
               "inputs": {
                 "cohort_id": "${cohort_id}",
                 "final_adata_object": "${input_resources_file_path}/${cohort_workflow_name}/${cohort_id}.final.h5ad",
+                "scvi_latent_key": "${scvi_latent_key}",
                 "scanvi_predictions_key": "${scanvi_predictions_key}",
                 "batch_key": "${batch_key}",
                 "benchmark_spike_in": false,
@@ -307,7 +308,7 @@
         },
         "plot_groups_and_features": {
           "key": "plot_groups_and_features",
-          "digest": "msv7zfzri4otdz3epxssnueptbgn5byk",
+          "digest": "kwhxoa7tnsmbfnrwq4uizzwrswrhug3t",
           "tests": [
             {
               "inputs": {
@@ -386,13 +387,14 @@
         },
         "assign_remaining_cells": {
           "key": "assign_remaining_cells",
-          "digest": "o2ox5kaxrjxudg2zeul7rdw47jdhazrb",
+          "digest": "26kvmnzwrdyuletigxu33jga7w3puwgv",
           "tests": [
             {
               "inputs": {
                 "cohort_id": "${cohort_id}",
                 "integrated_adata_object": "${input_resources_file_path}/${cohort_workflow_name}/${cohort_id}.scvi_integrated.h5ad",
                 "scvi_model_tar_gz": "${input_resources_file_path}/${cohort_workflow_name}/${cohort_id}.scvi_model.tar.gz",
+                "scvi_latent_key": "${scvi_latent_key}",
                 "scanvi_latent_key": "${scanvi_latent_key}",
                 "scanvi_predictions_key": "${scanvi_predictions_key}",
                 "raw_data_path": "${cohort_raw_data_path}",
@@ -606,7 +608,7 @@
         },
         "counts_to_adata": {
           "key": "counts_to_adata",
-          "digest": "evwz7uehhrayvdzwn7sfnbz2z2l75stz",
+          "digest": "hapw5q75v2zirey6m5yjld7tyihvgdtk",
           "tests": [
             {
               "inputs": {
@@ -870,7 +872,7 @@
         "cell_type",
         "leiden_res_0.20",
         "leiden_res_0.50",
-        "leiden_res_1.0"
+        "leiden_res_1.00"
       ],
       "features": [
         "n_genes_by_counts",

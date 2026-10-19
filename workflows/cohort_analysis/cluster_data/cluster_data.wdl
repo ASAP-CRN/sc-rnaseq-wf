@@ -43,6 +43,7 @@ workflow cluster_data {
 			cohort_id = cohort_id,
 			integrated_adata_object = integrate_sample_data.integrated_adata_object,
 			scvi_model_tar_gz = integrate_sample_data.scvi_model_tar_gz, #!FileCoercion
+			scvi_latent_key = scvi_latent_key,
 			scanvi_latent_key = scanvi_latent_key,
 			scanvi_predictions_key = scanvi_predictions_key,
 			raw_data_path = raw_data_path,
@@ -176,6 +177,7 @@ task assign_remaining_cells {
 		File integrated_adata_object
 		File scvi_model_tar_gz
 
+		String scvi_latent_key
 		String scanvi_latent_key
 		String scanvi_predictions_key
 
@@ -202,6 +204,7 @@ task assign_remaining_cells {
 		/usr/bin/time \
 		label_scanvi \
 			--workflow-name ~{workflow_name} \
+			--scvi-latent-key ~{scvi_latent_key} \
 			--latent-key ~{scanvi_latent_key} \
 			--predictions-key ~{scanvi_predictions_key} \
 			--adata-input ~{integrated_adata_object} \
@@ -246,6 +249,7 @@ task assign_remaining_cells {
 		cohort_id: {help: "Name of the cohort; used to name output files."}
 		integrated_adata_object: {help: "scVI-integrated AnnData object with batch-corrected latent representation."}
 		scvi_model_tar_gz: {help: "Tarball of the trained scVI model directory from integrate_sample_data."}
+		scvi_latent_key: {help: "Latent key of the scVI latent; checked for NaN before training. ['X_scVI']"}
 		scanvi_latent_key: {help: "Latent key to save the scANVI latent to. ['X_scANVI']"}
 		scanvi_predictions_key: {help: "scANVI cell type predictions column name. ['C_scANVI']"}
 		raw_data_path: {help: "Raw data bucket path for outputs; location of raw bucket to upload task outputs to (`<raw_data_bucket>/workflow_execution/cohort_analysis/<cohort_analysis_version>/<run_timestamp>`)."}

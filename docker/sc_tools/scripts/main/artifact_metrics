@@ -71,7 +71,7 @@ def get_spike_in_benchmark(adata: AnnData, label_key: str) -> DataFrame:
 
 
 def get_artifact_metrics(
-    adata: AnnData, batch_key: str, label_key: str, scib_report_dir: Path | str
+    adata: AnnData, batch_key: str, label_key: str, scvi_latent_key: str, scib_report_dir: Path | str
 ) -> DataFrame:
     # Set CPUs to use for parallel computing
     sc.settings.n_jobs = -1
@@ -93,7 +93,7 @@ def get_artifact_metrics(
         adata,
         batch_key=batch_key,
         label_key=label_key,
-        embedding_obsm_keys=["Unintegrated", "X_scVI", "X_pca_harmony"],
+        embedding_obsm_keys=["Unintegrated", scvi_latent_key, "X_pca_harmony"],
         pre_integrated_embedding_obsm_key="X_pca",
         bio_conservation_metrics=biocons,
         batch_correction_metrics=batchcorr,
@@ -117,15 +117,25 @@ def main(args: argparse.Namespace):
         benchmark_df = get_spike_in_benchmark(adata, args.predictions_key)
         benchmark_df.to_csv(args.output_spike_in_benchmark_file, index=True)
 
+    # Spike-in reference cells add one batch per reference donor/sample, which makes the batch-correction metrics
+    # (e.g. iLISI is normalized by the number of batches) degenerate; score integration on cohort cells only
+    if "is_spike_in" in adata.obs.columns:
+        cohort_cells = ~adata.obs["is_spike_in"].astype(bool).to_numpy()
+        print(f"Excluding {(~cohort_cells).sum()} spike-in cells from scib metrics")
+        # View; copied below (by subsampling or explicitly) so the full-size object isn't duplicated in memory
+        adata = adata[cohort_cells]
+
     if adata.n_obs > 500_000:
         adata = sc.pp.sample(adata, n=500_000, rng=42, copy=True)
+    elif adata.is_view:
+        adata = adata.copy()
 
     # Save the results
     report_dir = Path.cwd() / args.output_report_dir
     if not report_dir.exists():
         report_dir.mkdir(parents=True, exist_ok=True)
 
-    report_df = get_artifact_metrics(adata, args.batch_key, args.predictions_key, report_dir)
+    report_df = get_artifact_metrics(adata, args.batch_key, args.predictions_key, args.scvi_latent_key, report_dir)
     report_df.to_csv((report_dir / "scib_report.csv"), index=True)
 
 
@@ -138,6 +148,12 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="scANVI cell type predictions column name in AnnData object that references our 'cell_type' labels",
+    )
+    parser.add_argument(
+        "--scvi-latent-key",
+        type=str,
+        required=True,
+        help="Latent key of the scVI latent to benchmark",
     )
     parser.add_argument(
         "--batch-key",
