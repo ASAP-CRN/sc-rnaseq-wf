@@ -106,7 +106,7 @@
         },
         "map_cell_types": {
           "key": "map_cell_types",
-          "digest": "iqwxmt2p4tvkzoynmckvspidbrvqjluj",
+          "digest": "dpdvjkhupzp6guugoqozhxujwvsdgef4",
           "tests": [
             {
               "inputs": {
@@ -269,7 +269,7 @@
         },
         "artifact_metrics": {
           "key": "artifact_metrics",
-          "digest": "pk3eyrhwucwbwkml3tqcaql7fwzxkxiv",
+          "digest": "dbkfw4xuc56jzdixwfuddy77m36riiji",
           "tests": [
             {
               "inputs": {
@@ -308,7 +308,7 @@
         },
         "plot_groups_and_features": {
           "key": "plot_groups_and_features",
-          "digest": "msv7zfzri4otdz3epxssnueptbgn5byk",
+          "digest": "kwhxoa7tnsmbfnrwq4uizzwrswrhug3t",
           "tests": [
             {
               "inputs": {
@@ -387,7 +387,7 @@
         },
         "assign_remaining_cells": {
           "key": "assign_remaining_cells",
-          "digest": "o2ox5kaxrjxudg2zeul7rdw47jdhazrb",
+          "digest": "26kvmnzwrdyuletigxu33jga7w3puwgv",
           "tests": [
             {
               "inputs": {
@@ -608,7 +608,7 @@
         },
         "counts_to_adata": {
           "key": "counts_to_adata",
-          "digest": "evwz7uehhrayvdzwn7sfnbz2z2l75stz",
+          "digest": "hapw5q75v2zirey6m5yjld7tyihvgdtk",
           "tests": [
             {
               "inputs": {
