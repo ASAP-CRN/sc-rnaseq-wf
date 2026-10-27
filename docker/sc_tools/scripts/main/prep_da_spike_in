@@ -181,12 +181,16 @@ def merge_with_cohort(spike_ins: list[AnnData], cohort: AnnData, n_comps: int) -
 
     cohort.obs["is_spike_in"] = False
     cohort.obs["cell_type"] = cohort.obs["cell_type"].astype(str)
+    # scANVI trains on obs["scanvi_labels"] so obs["cell_type"] keeps the MMC call in the final outputs
+    cohort.obs["scanvi_labels"] = cohort.obs["cell_type"]
+    for spike_in in spike_ins:
+        spike_in.obs["scanvi_labels"] = spike_in.obs["cell_type"].astype(str)
     if any(x.obs["spike_in_source"].iloc[0] == KAMATH_ID for x in spike_ins):
-        # Cohort DA neurons mapped by MMC (Siletti) are left unlabeled so scANVI assigns them a Kamath
-        # DA subtype instead of training on the coarse label; MMC's call is kept in obs["phenotype"]
+        # Cohort DA neurons mapped by MMC (Siletti) are left unlabeled for scANVI so it assigns them a Kamath
+        # DA subtype instead of training on the coarse label; obs["cell_type"] keeps MMC's call
         cohort_da = cohort.obs["cell_type"] == DOPAMINERGIC
-        cohort.obs.loc[cohort_da, "cell_type"] = "Unknown"
-        print(f"Cohort cells labeled {DOPAMINERGIC} by MMC set to Unknown: {cohort_da.sum()}")
+        cohort.obs.loc[cohort_da, "scanvi_labels"] = "Unknown"
+        print(f"Cohort cells labeled {DOPAMINERGIC} by MMC set to Unknown in scanvi_labels: {cohort_da.sum()}")
     cohort.X = sp.csr_matrix(cohort.X)
     cohort.layers["counts"] = sp.csr_matrix(cohort.layers["counts"])
 

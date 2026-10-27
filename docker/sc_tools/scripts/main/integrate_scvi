@@ -24,7 +24,7 @@ def integrate_with_scvi(
     gene_likelihood = "zinb"
     latent_distribution = "normal"
     early_stopping = True
-    early_stopping_patience = 20
+    early_stopping_patience = 10
 
     # Set parameters based on numerical instabilities
     threshold_cells = 3.05e6 # No. of cells in Sep 2025 PMDBS sc cohort (Lee, Hardy, Hafler, Jakobsson, Scherzer)
@@ -63,7 +63,8 @@ def integrate_with_scvi(
 
     n_cells = adata.n_obs
     scvi_epochs = scvi.model.get_max_epochs_heuristic(n_obs=n_cells)
-    scvi_epochs = max(scvi_epochs, 20)
+    scvi_epochs = max(scvi_epochs, 100)
+    print(f"--- Using up to {scvi_epochs} epochs (early stopping patience {early_stopping_patience})")
 
     model.train(
         train_size=train_size,

@@ -44,7 +44,8 @@ def label_with_scanvi(
     adata: ad.AnnData,
     model: scvi.model.SCVI,
     num_workers: int,
-    workflow_name: str
+    workflow_name: str,
+    labels_key: str
 ) -> tuple[ad.AnnData, scvi.model.SCANVI]:
     """
     Fit scANVI model to AnnData object
@@ -57,7 +58,7 @@ def label_with_scanvi(
     gene_likelihood = "zinb"
     latent_distribution = "normal"
     early_stopping = True
-    early_stopping_patience = 20
+    early_stopping_patience = 10
 
     # Set parameters based on numerical instabilities and source
     if workflow_name in ("pmdbs_sc_rnaseq", "pmdbs_sc_multiome"):
@@ -84,13 +85,15 @@ def label_with_scanvi(
     scanvi_model = scvi.model.SCANVI.from_scvi_model(
         model,
         adata=adata,
-        labels_key="cell_type",
+        labels_key=labels_key,
         unlabeled_category="Unknown",
     )
 
     n_cells = adata.n_obs
+    # scANVI starts from the trained scVI weights, so it needs far fewer epochs (scvi-tools' own default from a pretrained scVI model is at most 10)
     scanvi_epochs = scvi.model.get_max_epochs_heuristic(n_obs=n_cells)
-    scanvi_epochs = max(scanvi_epochs, 10)
+    scanvi_epochs = max(scanvi_epochs, 20)
+    print(f"--- Using up to {scanvi_epochs} epochs (early stopping patience {early_stopping_patience})")
 
     print("Training scANVI model")
     scanvi_model.train(
@@ -123,14 +126,18 @@ def main(args: argparse.Namespace):
 
     # 0. Load data
     adata = ad.read_h5ad(args.adata_input)  # type: ignore
-    check_inputs(adata)
+    # prep_da_spike_in writes scANVI training labels to scanvi_labels (cohort DA neurons unlabeled when Kamath
+    # is spiked in) and leaves cell_type as the MMC call; without a spike-in, train on cell_type
+    labels_key = "scanvi_labels" if "scanvi_labels" in adata.obs.columns else "cell_type"
+    print(f"Training scANVI on obs['{labels_key}']")
+    check_inputs(adata, scvi_latent_key=args.scvi_latent_key, labels_key=labels_key)
     model_path = args.scvi_outputs_dir
     model = scvi.model.SCVI.load(
         dir_path=model_path,
         adata=adata,
     )
     # 4. Get scANVI model
-    adata, scanvi_model = label_with_scanvi(adata, model, num_workers, args.workflow_name)
+    adata, scanvi_model = label_with_scanvi(adata, model, num_workers, args.workflow_name, labels_key)
     # 5. Save the integrated adata and scANVI model
     scanvi_model.save(args.output_scanvi_dir, overwrite=True)
     # 6. Save the latent space
@@ -148,6 +155,12 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="Workflow name to set training parameters based on source ('human' or 'mouse') due to numerical instabilities",
+    )
+    parser.add_argument(
+        "--scvi-latent-key",
+        type=str,
+        required=True,
+        help="Latent key of the scVI latent; checked for NaN before training",
     )
     parser.add_argument(
         "--latent-key",
